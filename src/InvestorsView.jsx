@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from './supabaseClient'
 
 function fmt(n) {
-  return (n || 0).toLocaleString('ru-RU') + ' ₸'
+  return (n || 0).toLocaleString('ru-RU') + ' ₽'
 }
 
 export default function InvestorsView({ tenantId }) {
