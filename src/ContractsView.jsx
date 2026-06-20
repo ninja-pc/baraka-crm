@@ -28,7 +28,7 @@ export default function ContractsView({ tenantId, profile }) {
     setLoading(true)
     const { data: contractsData } = await supabase
       .from('contracts')
-      .select('*, clients(full_name, phone), contract_funding(*, investors(full_name))')
+      .select('*, clients(full_name, phone), contract_funding(*, investors(full_name)), payment_schedule(*), payments(*)')
       .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false })
 
@@ -103,6 +103,28 @@ export default function ContractsView({ tenantId, profile }) {
       const { error: fundingErr } = await supabase.from('contract_funding').insert(fundingRows)
       if (fundingErr) { setSaving(false); alert('Ошибка пула: ' + fundingErr.message); return }
     }
+
+    // 4. generate even monthly payment schedule (sale price / term months)
+    const months = Number(form.term_months)
+    const salePrice = Number(form.sale_price)
+    const baseAmount = Math.floor((salePrice / months) * 100) / 100
+    const scheduleRows = []
+    let runningTotal = 0
+    for (let i = 1; i <= months; i++) {
+      const dueDate = new Date()
+      dueDate.setMonth(dueDate.getMonth() + i)
+      // last installment absorbs any rounding remainder
+      const amount = i === months ? Math.round((salePrice - runningTotal) * 100) / 100 : baseAmount
+      runningTotal += amount
+      scheduleRows.push({
+        contract_id: contract.id,
+        installment_no: i,
+        due_date: dueDate.toISOString().slice(0, 10),
+        amount_due: amount,
+      })
+    }
+    const { error: scheduleErr } = await supabase.from('payment_schedule').insert(scheduleRows)
+    if (scheduleErr) { setSaving(false); alert('Ошибка графика платежей: ' + scheduleErr.message); return }
 
     setSaving(false)
     setShowForm(false)
@@ -221,10 +243,103 @@ export default function ContractsView({ tenantId, profile }) {
                   <p className="mono" style={{ fontSize: 13, margin: 0 }}>{fmt(f.amount)} · {f.share_pct}%</p>
                 </div>
               ))}
+
+              <p style={{ fontSize: 12, color: 'var(--stone)', margin: '14px 0 6px' }}>График платежей</p>
+              <PaymentSchedule contract={c} profile={profile} onChanged={loadAll} />
             </div>
           )}
         </div>
       ))}
+    </div>
+  )
+}
+
+function PaymentSchedule({ contract, profile, onChanged }) {
+  const [payingId, setPayingId] = useState(null)
+  const [amount, setAmount] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const schedule = [...(contract.payment_schedule || [])].sort((a, b) => a.installment_no - b.installment_no)
+  const payments = contract.payments || []
+  const totalPaid = payments.reduce((s, p) => s + Number(p.amount), 0)
+
+  // walk through schedule, allocating cumulative paid amount to each installment in order
+  let remainingPaid = totalPaid
+  const rows = schedule.map(item => {
+    const due = Number(item.amount_due)
+    const allocated = Math.min(remainingPaid, due)
+    remainingPaid -= allocated
+    const isPaid = allocated >= due - 0.01
+    const isOverdue = !isPaid && new Date(item.due_date) <= new Date()
+    return { ...item, allocated, isPaid, isOverdue }
+  })
+
+  async function handleRecordPayment(item) {
+    if (!amount) return
+    setSaving(true)
+    const { error } = await supabase.from('payments').insert({
+      contract_id: contract.id,
+      amount: Number(amount),
+      received_by: profile.id,
+    })
+    setSaving(false)
+    if (error) { alert('Ошибка: ' + error.message); return }
+    setPayingId(null)
+    setAmount('')
+    onChanged()
+  }
+
+  return (
+    <div>
+      {rows.map(item => (
+        <div key={item.id} style={{ padding: '8px 0', borderTop: '1px solid var(--border)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <p style={{ fontSize: 13, margin: 0 }}>
+                Платёж {item.installment_no} · {new Date(item.due_date).toLocaleDateString('ru-RU')}
+              </p>
+              <p style={{ fontSize: 11, margin: '2px 0 0' }}>
+                {item.isPaid && <span style={{ color: 'var(--teal)' }}>оплачено</span>}
+                {!item.isPaid && item.isOverdue && <span style={{ color: 'var(--rust)' }}>просрочен</span>}
+                {!item.isPaid && !item.isOverdue && <span style={{ color: 'var(--stone)' }}>ожидается</span>}
+                {item.allocated > 0 && !item.isPaid && <span style={{ color: 'var(--stone)' }}> · частично {fmt(item.allocated)}</span>}
+              </p>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <p className="mono" style={{ fontSize: 13, margin: 0 }}>{fmt(item.amount_due)}</p>
+              {!item.isPaid && payingId !== item.id && (
+                <button
+                  className="btn-secondary" style={{ padding: '4px 10px', fontSize: 12 }}
+                  onClick={() => { setPayingId(item.id); setAmount(String(item.amount_due - item.allocated)) }}
+                >
+                  Внести оплату
+                </button>
+              )}
+            </div>
+          </div>
+
+          {payingId === item.id && (
+            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+              <input
+                className="input-field" type="number" autoFocus
+                value={amount} onChange={e => setAmount(e.target.value)}
+                style={{ maxWidth: 160 }}
+              />
+              <button className="btn-primary" style={{ padding: '6px 14px', fontSize: 13 }} disabled={saving}
+                onClick={() => handleRecordPayment(item)}>
+                {saving ? 'Сохраняем...' : 'Подтвердить'}
+              </button>
+              <button className="btn-secondary" style={{ padding: '6px 14px', fontSize: 13 }}
+                onClick={() => { setPayingId(null); setAmount('') }}>
+                Отмена
+              </button>
+            </div>
+          )}
+        </div>
+      ))}
+      {schedule.length === 0 && (
+        <p style={{ fontSize: 12, color: 'var(--stone)' }}>График не сформирован.</p>
+      )}
     </div>
   )
 }
