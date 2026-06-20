@@ -1,0 +1,109 @@
+:root {
+  --ink: #1C1A17;
+  --ivory: #FAF7F0;
+  --paper: #FFFFFF;
+  --teal: #0E6B5C;
+  --teal-bg: #E6F0EE;
+  --rust: #B5482F;
+  --rust-bg: #FBEAE5;
+  --stone: #8A8478;
+  --stone-light: #E5E1D8;
+  --border: #DEDACE;
+
+  --font-display: 'Fraunces', serif;
+  --font-sans: 'Inter', -apple-system, sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--ivory);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+button {
+  font-family: inherit;
+}
+
+input, select {
+  font-family: inherit;
+  font-size: 14px;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.btn-primary {
+  background: var(--ink);
+  color: var(--ivory);
+  border: none;
+  border-radius: 8px;
+  padding: 10px 18px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+.btn-primary:hover { opacity: 0.85; }
+.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.btn-secondary {
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 18px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.btn-secondary:hover { background: var(--stone-light); }
+
+.input-field {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--paper);
+  color: var(--ink);
+  width: 100%;
+}
+.input-field:focus {
+  outline: 2px solid var(--teal);
+  outline-offset: 1px;
+}
+
+.card {
+  background: var(--paper);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 99px;
+  letter-spacing: 0.02em;
+}
+.badge-active { background: var(--teal-bg); color: var(--teal); }
+.badge-overdue { background: var(--rust-bg); color: var(--rust); }
+.badge-closed { background: var(--stone-light); color: var(--stone); }
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: var(--stone-light); border-radius: 99px; }
