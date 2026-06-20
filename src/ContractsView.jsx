@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from './supabaseClient'
 
 function fmt(n) {
-  return (n || 0).toLocaleString('ru-RU') + ' ₸'
+  return (n || 0).toLocaleString('ru-RU') + ' ₽'
 }
 
 const STATUS_LABEL = { active: 'Активен', overdue: 'Просрочка', closed: 'Закрыт' }
@@ -146,9 +146,9 @@ export default function ContractsView({ tenantId, profile }) {
           <input className="input-field" placeholder="Товар / описание" required
             value={form.item_description} onChange={e => setForm({ ...form, item_description: e.target.value })} />
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
-            <input className="input-field" placeholder="Закупочная цена (₸)" type="number" required
+            <input className="input-field" placeholder="Закупочная цена (₽)" type="number" required
               value={form.cost_price} onChange={e => setForm({ ...form, cost_price: e.target.value })} />
-            <input className="input-field" placeholder="Цена продажи (₸)" type="number" required
+            <input className="input-field" placeholder="Цена продажи (₽)" type="number" required
               value={form.sale_price} onChange={e => setForm({ ...form, sale_price: e.target.value })} />
             <input className="input-field" placeholder="Срок (мес.)" type="number" required
               value={form.term_months} onChange={e => setForm({ ...form, term_months: e.target.value })} />
@@ -169,7 +169,7 @@ export default function ContractsView({ tenantId, profile }) {
                 <option value="">Выберите инвестора</option>
                 {investors.map(inv => <option key={inv.id} value={inv.id}>{inv.full_name}</option>)}
               </select>
-              <input className="input-field" placeholder="Сумма вклада (₸)" type="number" required
+              <input className="input-field" placeholder="Сумма вклада (₽)" type="number" required
                 value={row.amount} onChange={e => updatePoolRow(idx, 'amount', e.target.value)} />
               {pool.length > 1 && (
                 <button type="button" onClick={() => removePoolRow(idx)} className="btn-secondary" style={{ padding: '8px 12px' }}>✕</button>
