@@ -168,6 +168,14 @@ export default function ContractsView({ tenantId, profile }) {
     loadAll()
   }
 
+
+  async function handleDeleteContract(id) {
+    if (!confirm('Удалить договор? Все платежи и данные пула будут удалены.')) return
+    await supabase.from('contracts').delete().eq('id', id)
+    setSelected(null)
+    loadAll()
+  }
+
   if (loading) return <p style={{ color: 'var(--stone)' }}>Загрузка...</p>
 
   const activeCount = contracts.filter(c => c.status === 'active').length
@@ -294,6 +302,15 @@ export default function ContractsView({ tenantId, profile }) {
               ))}
               <p style={{ fontSize: 12, color: 'var(--stone)', margin: '14px 0 6px' }}>График платежей</p>
               <PaymentSchedule contract={c} profile={profile} onChanged={loadAll} />
+              <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+                <button
+                  className="btn-secondary"
+                  style={{ fontSize: 12, color: 'var(--rust)', borderColor: 'var(--rust-bg)' }}
+                  onClick={(e) => { e.stopPropagation(); handleDeleteContract(c.id) }}
+                >
+                  Удалить договор
+                </button>
+              </div>
             </div>
           )}
         </div>
