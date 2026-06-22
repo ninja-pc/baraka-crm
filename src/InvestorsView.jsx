@@ -102,17 +102,25 @@ export default function InvestorsView({ tenantId, profile }) {
   async function handlePayout(e) {
     e.preventDefault()
     setPayoutSaving(true)
-    const { error } = await supabase.from('investor_payouts').insert({
-      tenant_id: tenantId,
-      investor_id: payoutForm.investor_id,
-      amount: Number(payoutForm.amount),
-      note: payoutForm.note,
-      created_by: profile.id,
-    })
-    setPayoutSaving(false)
-    if (!error) {
-      setPayoutForm({ investor_id: null, amount: '', note: '' })
-      loadInvestors()
+    try {
+      const { error } = await supabase.from('investor_payouts').insert({
+        tenant_id: tenantId,
+        investor_id: payoutForm.investor_id,
+        amount: Number(payoutForm.amount),
+        note: payoutForm.note || null,
+        paid_at: new Date().toISOString().slice(0, 10),
+        created_by: profile.id,
+      })
+      if (error) {
+        alert('Ошибка выплаты: ' + error.message)
+      } else {
+        setPayoutForm({ investor_id: null, amount: '', note: '' })
+        loadInvestors()
+      }
+    } catch (err) {
+      alert('Неожиданная ошибка: ' + err.message)
+    } finally {
+      setPayoutSaving(false)
     }
   }
 
