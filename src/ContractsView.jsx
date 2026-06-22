@@ -8,17 +8,9 @@ function fmt(n) {
 const STATUS_LABEL = { active: 'Активен', overdue: 'Просрочка', closed: 'Закрыт' }
 const STATUS_CLASS = { active: 'badge-active', overdue: 'badge-overdue', closed: 'badge-closed' }
 
-// Цветовое обозначение договора по срокам следующего платежа
 function getUrgencyStyle(contract) {
   if (contract.status === 'closed') return {}
   if (contract.status === 'overdue') return { borderLeft: '3px solid #B5482F' }
-
-  const schedule = (contract.payment_schedule || []).filter(s => {
-    const totalPaid = (contract.payments || []).reduce((s, p) => s + Number(p.amount), 0)
-    return true
-  })
-
-  // ближайший неоплаченный платёж
   const totalPaid = (contract.payments || []).reduce((s, p) => s + Number(p.amount), 0)
   const sorted = [...(contract.payment_schedule || [])].sort((a, b) => a.installment_no - b.installment_no)
   let remaining = totalPaid
@@ -29,14 +21,51 @@ function getUrgencyStyle(contract) {
     remaining -= allocated
     if (allocated < due - 0.01) { nextDue = item; break }
   }
-
   if (!nextDue) return {}
   const daysUntil = Math.ceil((new Date(nextDue.due_date) - new Date()) / (1000 * 60 * 60 * 24))
-
-  if (daysUntil <= 0) return { borderLeft: '3px solid #B5482F' }      // красный — просрочка
-  if (daysUntil <= 2) return { borderLeft: '3px solid #D4A017' }       // жёлтый — 2 дня
-  if (totalPaid > 0) return { borderLeft: '3px solid #0E6B5C' }        // зелёный — есть оплата
+  if (daysUntil <= 0) return { borderLeft: '3px solid #B5482F' }
+  if (daysUntil <= 2) return { borderLeft: '3px solid #D4A017' }
+  if (totalPaid > 0) return { borderLeft: '3px solid #0E6B5C' }
   return {}
+}
+
+// Живой калькулятор рассрочки
+function Calculator({ form }) {
+  const costPrice = Number(form.cost_price) || 0
+  const salePrice = Number(form.sale_price) || 0
+  const downPayment = Number(form.down_payment) || 0
+  const termMonths = Number(form.term_months) || 0
+
+  if (!salePrice || !termMonths) return null
+
+  const markup = salePrice - costPrice
+  const amountToFinance = Math.max(0, salePrice - downPayment)
+  const monthlyPayment = termMonths > 0 ? amountToFinance / termMonths : 0
+
+  return (
+    <div style={{
+      background: 'var(--teal-bg)', border: '1px solid var(--teal)',
+      borderRadius: 8, padding: '12px 14px', display: 'grid',
+      gridTemplateColumns: 'repeat(2, 1fr)', gap: 8,
+    }}>
+      <p style={{ fontSize: 12, color: 'var(--stone)', margin: 0, gridColumn: '1/-1', fontWeight: 600 }}>
+        📊 Расчёт рассрочки
+      </p>
+      <CalcRow label="Наценка (доход)" value={fmt(markup)} color="var(--teal)" />
+      {downPayment > 0 && <CalcRow label="Первоначальный взнос" value={fmt(downPayment)} />}
+      <CalcRow label="Сумма к рассрочке" value={fmt(amountToFinance)} />
+      <CalcRow label="Ежемесячный платёж" value={fmt(Math.round(monthlyPayment))} color="var(--ink)" bold />
+    </div>
+  )
+}
+
+function CalcRow({ label, value, color, bold }) {
+  return (
+    <div>
+      <p style={{ fontSize: 11, color: 'var(--stone)', margin: 0 }}>{label}</p>
+      <p className="mono" style={{ fontSize: 14, margin: 0, color: color || 'var(--ink)', fontWeight: bold ? 600 : 400 }}>{value}</p>
+    </div>
+  )
 }
 
 export default function ContractsView({ tenantId, profile }) {
@@ -52,7 +81,7 @@ export default function ContractsView({ tenantId, profile }) {
 
   const [form, setForm] = useState({
     client_name: '', client_phone: '', item_description: '',
-    cost_price: '', sale_price: '', term_months: '',
+    cost_price: '', sale_price: '', down_payment: '', term_months: '',
   })
   const [pool, setPool] = useState([{ investor_id: '', amount: '' }])
 
@@ -89,7 +118,6 @@ export default function ContractsView({ tenantId, profile }) {
     setLoading(false)
   }
 
-  // проверка двойного договора при вводе имени клиента
   function checkDuplicate(name) {
     if (!name || name.length < 3) { setDupWarning(''); return }
     const existing = contracts.filter(c =>
@@ -136,8 +164,11 @@ export default function ContractsView({ tenantId, profile }) {
       .from('clients')
       .insert({ tenant_id: tenantId, full_name: form.client_name, phone: form.client_phone })
       .select().single()
-
     if (clientErr) { setSaving(false); alert('Ошибка клиента: ' + clientErr.message); return }
+
+    const downPayment = Number(form.down_payment) || 0
+    const salePrice = Number(form.sale_price)
+    const amountToFinance = Math.max(0, salePrice - downPayment)
 
     const { data: contract, error: contractErr } = await supabase
       .from('contracts')
@@ -145,11 +176,11 @@ export default function ContractsView({ tenantId, profile }) {
         tenant_id: tenantId, client_id: client.id,
         item_description: form.item_description,
         cost_price: Number(form.cost_price),
-        sale_price: Number(form.sale_price),
+        sale_price: salePrice,
+        down_payment: downPayment,
         term_months: Number(form.term_months),
       })
       .select().single()
-
     if (contractErr) { setSaving(false); alert('Ошибка договора: ' + contractErr.message); return }
 
     const fundingRows = pool.filter(p => p.investor_id && p.amount).map(p => ({
@@ -157,21 +188,20 @@ export default function ContractsView({ tenantId, profile }) {
       amount: Number(p.amount),
       share_pct: costPrice > 0 ? Math.round((Number(p.amount) / costPrice) * 10000) / 100 : 0,
     }))
-
     if (fundingRows.length > 0) {
       const { error: fe } = await supabase.from('contract_funding').insert(fundingRows)
       if (fe) { setSaving(false); alert('Ошибка пула: ' + fe.message); return }
     }
 
+    // График строится на amountToFinance (цена продажи минус взнос)
     const months = Number(form.term_months)
-    const salePrice = Number(form.sale_price)
-    const baseAmount = Math.floor((salePrice / months) * 100) / 100
+    const baseAmount = Math.floor((amountToFinance / months) * 100) / 100
     const scheduleRows = []
     let runningTotal = 0
     for (let i = 1; i <= months; i++) {
       const dueDate = new Date()
       dueDate.setMonth(dueDate.getMonth() + i)
-      const amount = i === months ? Math.round((salePrice - runningTotal) * 100) / 100 : baseAmount
+      const amount = i === months ? Math.round((amountToFinance - runningTotal) * 100) / 100 : baseAmount
       runningTotal += amount
       scheduleRows.push({ contract_id: contract.id, installment_no: i, due_date: dueDate.toISOString().slice(0, 10), amount_due: amount })
     }
@@ -181,7 +211,7 @@ export default function ContractsView({ tenantId, profile }) {
     setSaving(false)
     setShowForm(false)
     setDupWarning('')
-    setForm({ client_name: '', client_phone: '', item_description: '', cost_price: '', sale_price: '', term_months: '' })
+    setForm({ client_name: '', client_phone: '', item_description: '', cost_price: '', sale_price: '', down_payment: '', term_months: '' })
     setPool([{ investor_id: '', amount: '' }])
     loadAll()
   }
@@ -200,7 +230,6 @@ export default function ContractsView({ tenantId, profile }) {
   const closedCount = contracts.filter(c => c.status === 'closed').length
   const totalMarkup = contracts.reduce((s, c) => s + Number(c.markup || 0), 0)
 
-  // фильтрация по поиску
   const filtered = contracts.filter(c => {
     if (!search.trim()) return true
     const q = search.toLowerCase()
@@ -220,16 +249,14 @@ export default function ContractsView({ tenantId, profile }) {
         <SummaryCard label="Закрыто" value={closedCount} />
       </div>
 
-      {/* Поиск */}
       <input
         className="input-field"
         placeholder="🔍 Поиск по клиенту, товару или телефону..."
-        value={search}
-        onChange={e => setSearch(e.target.value)}
+        value={search} onChange={e => setSearch(e.target.value)}
         style={{ marginBottom: 12 }}
       />
 
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
         <p style={{ fontSize: 13, color: 'var(--stone)', margin: 0 }}>
           {filtered.length} из {contracts.length} договор(ов)
         </p>
@@ -238,7 +265,6 @@ export default function ContractsView({ tenantId, profile }) {
         </button>
       </div>
 
-      {/* Легенда цветов */}
       <div style={{ display: 'flex', gap: 16, marginBottom: 12, fontSize: 12, color: 'var(--stone)' }}>
         <span><span style={{ color: '#0E6B5C' }}>▌</span> Есть оплата</span>
         <span><span style={{ color: '#D4A017' }}>▌</span> До платежа ≤ 2 дня</span>
@@ -262,23 +288,32 @@ export default function ContractsView({ tenantId, profile }) {
           <p style={{ fontSize: 13, fontWeight: 600, margin: '8px 0 0', color: 'var(--stone)' }}>Договор мурабаха</p>
           <input className="input-field" placeholder="Товар / описание" required
             value={form.item_description} onChange={e => setForm({ ...form, item_description: e.target.value })} />
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <input className="input-field" placeholder="Закупочная цена (₽)" type="number" required
               value={form.cost_price} onChange={e => setForm({ ...form, cost_price: e.target.value })} />
             <input className="input-field" placeholder="Цена продажи (₽)" type="number" required
               value={form.sale_price} onChange={e => setForm({ ...form, sale_price: e.target.value })} />
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <div>
+              <input className="input-field" placeholder="Первоначальный взнос (₽, необязательно)" type="number"
+                value={form.down_payment} onChange={e => setForm({ ...form, down_payment: e.target.value })} />
+              <p style={{ fontSize: 11, color: 'var(--stone)', margin: '4px 0 0' }}>
+                Оставьте пустым если без взноса
+              </p>
+            </div>
             <input className="input-field" placeholder="Срок (мес.)" type="number" required
               value={form.term_months} onChange={e => setForm({ ...form, term_months: e.target.value })} />
           </div>
-          {form.cost_price && form.sale_price && (
-            <p style={{ fontSize: 13, color: 'var(--teal)', margin: 0 }}>
-              Наценка (доход): {fmt(Number(form.sale_price) - Number(form.cost_price))}
-            </p>
-          )}
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '8px 0 0' }}>
+          {/* Живой калькулятор */}
+          <Calculator form={form} />
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '4px 0 0' }}>
             <p style={{ fontSize: 13, fontWeight: 600, margin: 0, color: 'var(--stone)', flex: 1 }}>
-              Пул инвесторов {poolMismatch && <span style={{ color: 'var(--rust)', fontWeight: 400 }}>— сумма не равна закупочной цене</span>}
+              Пул инвесторов {poolMismatch && <span style={{ color: 'var(--rust)', fontWeight: 400 }}>— сумма ≠ закупочной цене</span>}
             </p>
             <button type="button" onClick={autoDistribute} className="btn-secondary" style={{ padding: '6px 14px', fontSize: 12 }}>
               ⚡ Авторасчёт
@@ -314,7 +349,7 @@ export default function ContractsView({ tenantId, profile }) {
 
       {filtered.length === 0 && !showForm && (
         <div className="card" style={{ padding: '2rem', textAlign: 'center', color: 'var(--stone)' }}>
-          {search ? 'Ничего не найдено по запросу «' + search + '»' : 'Пока нет договоров. Создайте первый.'}
+          {search ? `Ничего не найдено по запросу «${search}»` : 'Пока нет договоров. Создайте первый.'}
         </div>
       )}
 
@@ -344,7 +379,9 @@ export default function ContractsView({ tenantId, profile }) {
                 <span className={`badge ${STATUS_CLASS[c.status]}`}>{STATUS_LABEL[c.status]}</span>
               </div>
               <p style={{ fontSize: 12, color: 'var(--stone)', margin: '0 0 6px' }}>
-                {c.clients?.full_name} · {c.term_months} мес · пул: {c.contract_funding?.length || 0} инв.
+                {c.clients?.full_name} · {c.term_months} мес
+                {Number(c.down_payment) > 0 && <span> · взнос {fmt(c.down_payment)}</span>}
+                {' · пул: '}{c.contract_funding?.length || 0} инв.
               </p>
               <div style={{ display: 'flex', gap: 16, fontSize: 12 }}>
                 <span className="mono">Цена: {fmt(c.sale_price)}</span>
@@ -355,6 +392,12 @@ export default function ContractsView({ tenantId, profile }) {
 
             {selected === c.id && (
               <div className="card" style={{ padding: '0.75rem 1rem', marginTop: -4, marginBottom: 8, background: 'var(--ivory)' }}>
+                {Number(c.down_payment) > 0 && (
+                  <p style={{ fontSize: 12, color: 'var(--stone)', margin: '0 0 8px' }}>
+                    Первоначальный взнос: <span className="mono" style={{ fontWeight: 500 }}>{fmt(c.down_payment)}</span> · к рассрочке: <span className="mono" style={{ fontWeight: 500 }}>{fmt(Number(c.sale_price) - Number(c.down_payment))}</span>
+                  </p>
+                )}
+
                 <p style={{ fontSize: 12, color: 'var(--stone)', margin: '0 0 6px' }}>Пул инвесторов</p>
                 {(c.contract_funding || []).map((f, idx) => {
                   const investorProfit = Math.round(Number(c.markup) * Number(f.share_pct)) / 100
@@ -406,8 +449,8 @@ function PaymentSchedule({ contract, profile, onChanged }) {
   const schedule = [...(contract.payment_schedule || [])].sort((a, b) => a.installment_no - b.installment_no)
   const payments = contract.payments || []
   const totalPaid = payments.reduce((s, p) => s + Number(p.amount), 0)
-  const totalDue = Number(contract.sale_price) || 0
-  const progressPct = totalDue > 0 ? Math.min(100, Math.round((totalPaid / totalDue) * 100)) : 0
+  const amountToFinance = Math.max(0, Number(contract.sale_price) - Number(contract.down_payment || 0))
+  const progressPct = amountToFinance > 0 ? Math.min(100, Math.round((totalPaid / amountToFinance) * 100)) : 0
 
   let remainingPaid = totalPaid
   const rows = schedule.map(item => {
@@ -424,17 +467,13 @@ function PaymentSchedule({ contract, profile, onChanged }) {
     setSaving(true)
     try {
       const { error } = await supabase.from('payments').insert({
-        contract_id: contract.id,
-        amount: Number(amount),
-        received_by: profile.id,
+        contract_id: contract.id, amount: Number(amount), received_by: profile.id,
       })
       if (error) { alert('Ошибка: ' + error.message); return }
       setPayingId(null)
       setAmount('')
       onChanged()
-    } finally {
-      setSaving(false)
-    }
+    } finally { setSaving(false) }
   }
 
   return (
@@ -445,13 +484,7 @@ function PaymentSchedule({ contract, profile, onChanged }) {
         </div>
         <span className="mono" style={{ fontSize: 11, color: 'var(--stone)' }}>{progressPct}% оплачено</span>
       </div>
-
-      {isClosed && (
-        <p style={{ fontSize: 12, color: 'var(--teal)', margin: '0 0 10px', fontWeight: 500 }}>
-          ✓ Договор полностью оплачен и закрыт
-        </p>
-      )}
-
+      {isClosed && <p style={{ fontSize: 12, color: 'var(--teal)', margin: '0 0 10px', fontWeight: 500 }}>✓ Договор полностью оплачен и закрыт</p>}
       {rows.map(item => (
         <div key={item.id} style={{ padding: '8px 0', borderTop: '1px solid var(--border)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
