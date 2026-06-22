@@ -43,7 +43,7 @@ export default function Dashboard() {
       </nav>
 
       <main style={{ paddingBottom: '4rem' }}>
-        {tab === 'investors' && <InvestorsView tenantId={profile.tenant_id} />}
+        {tab === 'investors' && <InvestorsView tenantId={profile.tenant_id} profile={profile} />}
         {tab === 'contracts' && <ContractsView tenantId={profile.tenant_id} profile={profile} />}
       </main>
     </div>
