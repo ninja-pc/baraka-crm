@@ -11,6 +11,7 @@ const STATUS_CLASS = { active: 'badge-active', overdue: 'badge-overdue', closed:
 export default function ContractsView({ tenantId, profile }) {
   const [contracts, setContracts] = useState([])
   const [investors, setInvestors] = useState([])
+  const [freeCapital, setFreeCapital] = useState({})
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [selected, setSelected] = useState(null)
@@ -34,12 +35,51 @@ export default function ContractsView({ tenantId, profile }) {
 
     const { data: investorsData } = await supabase
       .from('investors')
-      .select('id, full_name')
+      .select('id, full_name, total_capital')
       .eq('tenant_id', tenantId)
 
-    setContracts(contractsData || [])
+    // считаем свободный капитал: total_capital минус уже вложенное в активные/просроченные договоры
+    const { data: activeFunding } = await supabase
+      .from('contract_funding')
+      .select('investor_id, amount, contracts(status)')
+
+    const freeMap = {}
+    ;(investorsData || []).forEach(inv => {
+      const inUse = (activeFunding || [])
+        .filter(f => f.investor_id === inv.id && f.contracts?.status !== 'closed')
+        .reduce((s, f) => s + Number(f.amount), 0)
+      freeMap[inv.id] = Math.max(0, Number(inv.total_capital) - inUse)
+    })
+
     setInvestors(investorsData || [])
+    setFreeCapital(freeMap)
+    setContracts(contractsData || [])
     setLoading(false)
+  }
+
+  // автораспределение пула пропорционально свободному капиталу
+  function autoDistribute() {
+    const cost = Number(form.cost_price)
+    if (!cost || cost <= 0) {
+      alert('Сначала введите закупочную цену')
+      return
+    }
+    const eligible = investors.filter(inv => (freeCapital[inv.id] || 0) > 0)
+    if (eligible.length === 0) {
+      alert('Нет инвесторов со свободным капиталом')
+      return
+    }
+    const totalFree = eligible.reduce((s, inv) => s + freeCapital[inv.id], 0)
+    let remaining = cost
+    const newPool = eligible.map((inv, idx) => {
+      const isLast = idx === eligible.length - 1
+      const amount = isLast
+        ? remaining
+        : Math.floor((cost * freeCapital[inv.id] / totalFree))
+      remaining -= amount
+      return { investor_id: inv.id, amount: String(amount) }
+    })
+    setPool(newPool)
   }
 
   function addPoolRow() {
@@ -64,7 +104,6 @@ export default function ContractsView({ tenantId, profile }) {
     e.preventDefault()
     setSaving(true)
 
-    // 1. create client
     const { data: client, error: clientErr } = await supabase
       .from('clients')
       .insert({ tenant_id: tenantId, full_name: form.client_name, phone: form.client_phone })
@@ -73,7 +112,6 @@ export default function ContractsView({ tenantId, profile }) {
 
     if (clientErr) { setSaving(false); alert('Ошибка создания клиента: ' + clientErr.message); return }
 
-    // 2. create contract
     const { data: contract, error: contractErr } = await supabase
       .from('contracts')
       .insert({
@@ -89,7 +127,6 @@ export default function ContractsView({ tenantId, profile }) {
 
     if (contractErr) { setSaving(false); alert('Ошибка создания договора: ' + contractErr.message); return }
 
-    // 3. create pool funding rows
     const fundingRows = pool
       .filter(p => p.investor_id && p.amount)
       .map(p => ({
@@ -104,7 +141,6 @@ export default function ContractsView({ tenantId, profile }) {
       if (fundingErr) { setSaving(false); alert('Ошибка пула: ' + fundingErr.message); return }
     }
 
-    // 4. generate even monthly payment schedule (sale price / term months)
     const months = Number(form.term_months)
     const salePrice = Number(form.sale_price)
     const baseAmount = Math.floor((salePrice / months) * 100) / 100
@@ -113,7 +149,6 @@ export default function ContractsView({ tenantId, profile }) {
     for (let i = 1; i <= months; i++) {
       const dueDate = new Date()
       dueDate.setMonth(dueDate.getMonth() + i)
-      // last installment absorbs any rounding remainder
       const amount = i === months ? Math.round((salePrice - runningTotal) * 100) / 100 : baseAmount
       runningTotal += amount
       scheduleRows.push({
@@ -137,14 +172,16 @@ export default function ContractsView({ tenantId, profile }) {
 
   const activeCount = contracts.filter(c => c.status === 'active').length
   const overdueCount = contracts.filter(c => c.status === 'overdue').length
+  const closedCount = contracts.filter(c => c.status === 'closed').length
   const totalMarkup = contracts.reduce((s, c) => s + Number(c.markup || 0), 0)
 
   return (
     <div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: '1.5rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: '1.5rem' }}>
         <SummaryCard label="Активных договоров" value={activeCount} />
         <SummaryCard label="Ожидаемая наценка" value={fmt(totalMarkup)} color="var(--teal)" />
         <SummaryCard label="Просрочка" value={overdueCount} color={overdueCount > 0 ? 'var(--rust)' : undefined} />
+        <SummaryCard label="Закрыто" value={closedCount} />
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
@@ -181,15 +218,25 @@ export default function ContractsView({ tenantId, profile }) {
             </p>
           )}
 
-          <p style={{ fontSize: 13, fontWeight: 600, margin: '8px 0 0', color: 'var(--stone)' }}>
-            Пул инвесторов {poolMismatch && <span style={{ color: 'var(--rust)', fontWeight: 400 }}>— сумма не равна закупочной цене ({fmt(poolTotal)} из {fmt(costPrice)})</span>}
-          </p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '8px 0 0' }}>
+            <p style={{ fontSize: 13, fontWeight: 600, margin: 0, color: 'var(--stone)', flex: 1 }}>
+              Пул инвесторов {poolMismatch && <span style={{ color: 'var(--rust)', fontWeight: 400 }}>— сумма не равна закупочной цене ({fmt(poolTotal)} из {fmt(costPrice)})</span>}
+            </p>
+            <button type="button" onClick={autoDistribute} className="btn-secondary" style={{ padding: '6px 14px', fontSize: 12, whiteSpace: 'nowrap' }}>
+              ⚡ Авторасчёт
+            </button>
+          </div>
+
           {pool.map((row, idx) => (
             <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 10, alignItems: 'center' }}>
               <select className="input-field" required value={row.investor_id}
                 onChange={e => updatePoolRow(idx, 'investor_id', e.target.value)}>
                 <option value="">Выберите инвестора</option>
-                {investors.map(inv => <option key={inv.id} value={inv.id}>{inv.full_name}</option>)}
+                {investors.map(inv => (
+                  <option key={inv.id} value={inv.id}>
+                    {inv.full_name} (свободно: {fmt(freeCapital[inv.id] || 0)})
+                  </option>
+                ))}
               </select>
               <input className="input-field" placeholder="Сумма вклада (₽)" type="number" required
                 value={row.amount} onChange={e => updatePoolRow(idx, 'amount', e.target.value)} />
@@ -198,9 +245,11 @@ export default function ContractsView({ tenantId, profile }) {
               )}
             </div>
           ))}
-          <button type="button" onClick={addPoolRow} className="btn-secondary" style={{ justifySelf: 'start' }}>
-            + Добавить инвестора в пул
-          </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button type="button" onClick={addPoolRow} className="btn-secondary" style={{ justifySelf: 'start' }}>
+              + Добавить инвестора
+            </button>
+          </div>
 
           <button className="btn-primary" disabled={saving} style={{ justifySelf: 'start', marginTop: 8 }}>
             {saving ? 'Сохраняем...' : 'Создать договор'}
@@ -243,7 +292,6 @@ export default function ContractsView({ tenantId, profile }) {
                   <p className="mono" style={{ fontSize: 13, margin: 0 }}>{fmt(f.amount)} · {f.share_pct}%</p>
                 </div>
               ))}
-
               <p style={{ fontSize: 12, color: 'var(--stone)', margin: '14px 0 6px' }}>График платежей</p>
               <PaymentSchedule contract={c} profile={profile} onChanged={loadAll} />
             </div>
@@ -259,11 +307,13 @@ function PaymentSchedule({ contract, profile, onChanged }) {
   const [amount, setAmount] = useState('')
   const [saving, setSaving] = useState(false)
 
+  const isClosed = contract.status === 'closed'
   const schedule = [...(contract.payment_schedule || [])].sort((a, b) => a.installment_no - b.installment_no)
   const payments = contract.payments || []
   const totalPaid = payments.reduce((s, p) => s + Number(p.amount), 0)
+  const totalDue = Number(contract.sale_price) || 0
+  const progressPct = totalDue > 0 ? Math.min(100, Math.round((totalPaid / totalDue) * 100)) : 0
 
-  // walk through schedule, allocating cumulative paid amount to each installment in order
   let remainingPaid = totalPaid
   const rows = schedule.map(item => {
     const due = Number(item.amount_due)
@@ -274,7 +324,7 @@ function PaymentSchedule({ contract, profile, onChanged }) {
     return { ...item, allocated, isPaid, isOverdue }
   })
 
-  async function handleRecordPayment(item) {
+  async function handleRecordPayment() {
     if (!amount) return
     setSaving(true)
     const { error } = await supabase.from('payments').insert({
@@ -291,6 +341,19 @@ function PaymentSchedule({ contract, profile, onChanged }) {
 
   return (
     <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+        <div style={{ flex: 1, height: 6, background: 'var(--stone-light)', borderRadius: 99, overflow: 'hidden' }}>
+          <div style={{ width: `${progressPct}%`, height: '100%', background: isClosed ? 'var(--teal)' : 'var(--ink)' }} />
+        </div>
+        <span className="mono" style={{ fontSize: 11, color: 'var(--stone)' }}>{progressPct}% оплачено</span>
+      </div>
+
+      {isClosed && (
+        <p style={{ fontSize: 12, color: 'var(--teal)', margin: '0 0 10px', fontWeight: 500 }}>
+          ✓ Договор полностью оплачен и закрыт
+        </p>
+      )}
+
       {rows.map(item => (
         <div key={item.id} style={{ padding: '8px 0', borderTop: '1px solid var(--border)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -300,14 +363,14 @@ function PaymentSchedule({ contract, profile, onChanged }) {
               </p>
               <p style={{ fontSize: 11, margin: '2px 0 0' }}>
                 {item.isPaid && <span style={{ color: 'var(--teal)' }}>оплачено</span>}
-                {!item.isPaid && item.isOverdue && <span style={{ color: 'var(--rust)' }}>просрочен</span>}
+                {!item.isPaid && item.isOverdue && !isClosed && <span style={{ color: 'var(--rust)' }}>просрочен</span>}
                 {!item.isPaid && !item.isOverdue && <span style={{ color: 'var(--stone)' }}>ожидается</span>}
                 {item.allocated > 0 && !item.isPaid && <span style={{ color: 'var(--stone)' }}> · частично {fmt(item.allocated)}</span>}
               </p>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <p className="mono" style={{ fontSize: 13, margin: 0 }}>{fmt(item.amount_due)}</p>
-              {!item.isPaid && payingId !== item.id && (
+              {!item.isPaid && !isClosed && payingId !== item.id && (
                 <button
                   className="btn-secondary" style={{ padding: '4px 10px', fontSize: 12 }}
                   onClick={() => { setPayingId(item.id); setAmount(String(item.amount_due - item.allocated)) }}
@@ -326,7 +389,7 @@ function PaymentSchedule({ contract, profile, onChanged }) {
                 style={{ maxWidth: 160 }}
               />
               <button className="btn-primary" style={{ padding: '6px 14px', fontSize: 13 }} disabled={saving}
-                onClick={() => handleRecordPayment(item)}>
+                onClick={handleRecordPayment}>
                 {saving ? 'Сохраняем...' : 'Подтвердить'}
               </button>
               <button className="btn-secondary" style={{ padding: '6px 14px', fontSize: 13 }}
