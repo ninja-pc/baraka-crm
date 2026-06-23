@@ -37,6 +37,14 @@ export default function InvestorsView({ tenantId, profile }) {
       .select('*')
       .eq('tenant_id', tenantId)
 
+    // расходы компании (для распределения по инвесторам)
+    const { data: expensesData } = await supabase
+      .from('expenses')
+      .select('amount')
+      .eq('tenant_id', tenantId)
+    const totalExpenses = (expensesData || []).reduce((s, e) => s + Number(e.amount), 0)
+    const totalCapital = (invs || []).reduce((s, i) => s + Number(i.total_capital), 0)
+
     const enriched = (invs || []).map(inv => {
       const myFunding = (funding || []).filter(f => f.investor_id === inv.id)
 
@@ -59,6 +67,11 @@ export default function InvestorsView({ tenantId, profile }) {
         .filter(p => p.investor_id === inv.id)
         .sort((a, b) => new Date(b.paid_at) - new Date(a.paid_at))
 
+      const expense_share = totalCapital > 0
+        ? Math.round(totalExpenses * Number(inv.total_capital) / totalCapital)
+        : 0
+      const net_profit = Math.max(0, earned - paid_out - expense_share)
+
       return {
         ...inv,
         working,
@@ -66,6 +79,8 @@ export default function InvestorsView({ tenantId, profile }) {
         earned,
         paid_out,
         profit_pending: Math.max(0, earned - paid_out),
+        expense_share,
+        net_profit,
         deals: myFunding,
         payouts: myPayouts,
       }
@@ -129,7 +144,8 @@ export default function InvestorsView({ tenantId, profile }) {
     working: acc.working + i.working,
     earned: acc.earned + i.earned,
     pending: acc.pending + i.profit_pending,
-  }), { total: 0, working: 0, earned: 0, pending: 0 })
+    expenses: acc.expenses + (i.expense_share || 0),
+  }), { total: 0, working: 0, earned: 0, pending: 0, expenses: 0 })
 
   if (loading) return <p style={{ color: 'var(--stone)' }}>Загрузка...</p>
 
@@ -139,8 +155,8 @@ export default function InvestorsView({ tenantId, profile }) {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: '1.5rem' }}>
         <SummaryCard label="Капитал всего" value={fmt(totals.total)} />
         <SummaryCard label="В обороте" value={fmt(totals.working)} color="var(--teal)" />
-        <SummaryCard label="Заработано всего" value={fmt(totals.earned)} color="var(--teal)" />
-        <SummaryCard label="К выплате" value={fmt(totals.pending)} color={totals.pending > 0 ? 'var(--rust)' : undefined} />
+        <SummaryCard label="Заработано (наценка)" value={fmt(totals.earned)} color="var(--teal)" />
+        <SummaryCard label="Расходы (доля)" value={fmt(totals.expenses)} color="var(--rust)" />
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
@@ -216,7 +232,9 @@ export default function InvestorsView({ tenantId, profile }) {
                 <MiniCard label="Капитал" value={fmt(inv.total_capital)} />
                 <MiniCard label="Свободно" value={fmt(inv.free)} />
                 <MiniCard label="В обороте" value={fmt(inv.working)} color="var(--teal)" />
-                <MiniCard label="Заработано" value={fmt(inv.earned)} color="var(--teal)" />
+                <MiniCard label="Заработано (наценка)" value={fmt(inv.earned)} color="var(--teal)" />
+                <MiniCard label="Доля расходов" value={fmt(inv.expense_share || 0)} color="var(--rust)" />
+                <MiniCard label="Чистая прибыль" value={fmt(inv.net_profit || 0)} color="var(--teal)" bold />
                 <MiniCard label="Выплачено" value={fmt(inv.paid_out)} />
                 <MiniCard label="К выплате" value={fmt(inv.profit_pending)} color={inv.profit_pending > 0 ? 'var(--rust)' : undefined} />
               </div>
@@ -323,11 +341,11 @@ function SummaryCard({ label, value, color }) {
   )
 }
 
-function MiniCard({ label, value, color }) {
+function MiniCard({ label, value, color, bold }) {
   return (
     <div style={{ background: 'var(--paper)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' }}>
       <p style={{ fontSize: 11, color: 'var(--stone)', margin: '0 0 2px' }}>{label}</p>
-      <p className="mono" style={{ fontSize: 14, fontWeight: 500, margin: 0, color: color || 'var(--ink)' }}>{value}</p>
+      <p className="mono" style={{ fontSize: 14, fontWeight: bold ? 700 : 500, margin: 0, color: color || 'var(--ink)' }}>{value}</p>
     </div>
   )
 }
