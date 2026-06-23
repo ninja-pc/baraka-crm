@@ -1,8 +1,10 @@
+import { useState } from 'react'
 import { AuthProvider, useAuth } from './AuthContext'
 import Login from './Login'
 import InvestorsView from './InvestorsView'
 import ContractsView from './ContractsView'
 import ReportsView from './ReportsView'
+import ExpensesView from './ExpensesView'
 
 function AppContent() {
   const { session, profile, loading } = useAuth()
@@ -32,6 +34,13 @@ function Dashboard() {
   const { profile, signOut } = useAuth()
   const [tab, setTab] = useState('investors')
 
+  const tabs = [
+    { key: 'investors', label: 'Инвесторы' },
+    { key: 'contracts', label: 'Договоры' },
+    { key: 'expenses', label: 'Расходы' },
+    { key: 'reports', label: 'Отчёты' },
+  ]
+
   return (
     <div style={{ maxWidth: 1000, margin: '0 auto', padding: '0 1.5rem' }}>
       <header style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '1.5rem 0 1rem' }}>
@@ -47,16 +56,9 @@ function Dashboard() {
       </header>
 
       <nav style={{ display: 'flex', gap: 8, marginBottom: '1.5rem', borderBottom: '1px solid var(--border)', paddingBottom: 12 }}>
-        {[
-          { key: 'investors', label: 'Инвесторы' },
-          { key: 'contracts', label: 'Договоры' },
-          { key: 'reports', label: 'Отчёты' },
-        ].map(t => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={tab === t.key ? 'btn-primary' : 'btn-secondary'}
-          >
+        {tabs.map(t => (
+          <button key={t.key} onClick={() => setTab(t.key)}
+            className={tab === t.key ? 'btn-primary' : 'btn-secondary'}>
             {t.label}
           </button>
         ))}
@@ -65,13 +67,12 @@ function Dashboard() {
       <main style={{ paddingBottom: '4rem' }}>
         {tab === 'investors' && <InvestorsView tenantId={profile.tenant_id} profile={profile} />}
         {tab === 'contracts' && <ContractsView tenantId={profile.tenant_id} profile={profile} />}
+        {tab === 'expenses' && <ExpensesView tenantId={profile.tenant_id} profile={profile} />}
         {tab === 'reports' && <ReportsView tenantId={profile.tenant_id} />}
       </main>
     </div>
   )
 }
-
-import { useState } from 'react'
 
 export default function App() {
   return (
