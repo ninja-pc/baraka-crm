@@ -1,21 +1,40 @@
-import { useState, useEffect } from 'react'
-import { useAuth } from './AuthContext'
-import { supabase } from './supabaseClient'
-import ContractsView from './ContractsView'
+import { AuthProvider, useAuth } from './AuthContext'
+import Login from './Login'
 import InvestorsView from './InvestorsView'
+import ContractsView from './ContractsView'
+import ReportsView from './ReportsView'
 
-export default function Dashboard() {
+function AppContent() {
+  const { session, profile, loading } = useAuth()
+
+  if (loading) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--stone)' }}>
+        Загрузка...
+      </div>
+    )
+  }
+
+  if (!session) return <Login />
+
+  if (!profile) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--stone)', padding: '2rem', textAlign: 'center' }}>
+        Аккаунт не привязан ни к одной компании. Обратитесь к администратору.
+      </div>
+    )
+  }
+
+  return <Dashboard />
+}
+
+function Dashboard() {
   const { profile, signOut } = useAuth()
   const [tab, setTab] = useState('investors')
 
   return (
     <div style={{ maxWidth: 1000, margin: '0 auto', padding: '0 1.5rem' }}>
-      <header style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 12,
-        padding: '1.5rem 0 1rem',
-      }}>
+      <header style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '1.5rem 0 1rem' }}>
         <p style={{ fontFamily: 'var(--font-display)', fontSize: 20, fontWeight: 500, margin: 0 }}>
           {profile.tenants?.name || 'Барака CRM'}
         </p>
@@ -28,24 +47,36 @@ export default function Dashboard() {
       </header>
 
       <nav style={{ display: 'flex', gap: 8, marginBottom: '1.5rem', borderBottom: '1px solid var(--border)', paddingBottom: 12 }}>
-        <button
-          onClick={() => setTab('investors')}
-          className={tab === 'investors' ? 'btn-primary' : 'btn-secondary'}
-        >
-          Инвесторы
-        </button>
-        <button
-          onClick={() => setTab('contracts')}
-          className={tab === 'contracts' ? 'btn-primary' : 'btn-secondary'}
-        >
-          Договоры
-        </button>
+        {[
+          { key: 'investors', label: 'Инвесторы' },
+          { key: 'contracts', label: 'Договоры' },
+          { key: 'reports', label: 'Отчёты' },
+        ].map(t => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={tab === t.key ? 'btn-primary' : 'btn-secondary'}
+          >
+            {t.label}
+          </button>
+        ))}
       </nav>
 
       <main style={{ paddingBottom: '4rem' }}>
         {tab === 'investors' && <InvestorsView tenantId={profile.tenant_id} profile={profile} />}
         {tab === 'contracts' && <ContractsView tenantId={profile.tenant_id} profile={profile} />}
+        {tab === 'reports' && <ReportsView tenantId={profile.tenant_id} />}
       </main>
     </div>
+  )
+}
+
+import { useState } from 'react'
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   )
 }
