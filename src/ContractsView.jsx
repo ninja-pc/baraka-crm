@@ -29,13 +29,11 @@ function getUrgencyStyle(contract) {
   return {}
 }
 
-// Генерация дат платежей по выбранному числу месяца
 function buildScheduleDates(termMonths, paymentDay) {
   const dates = []
   const today = new Date()
   for (let i = 1; i <= termMonths; i++) {
-    const d = new Date(today.getFullYear(), today.getMonth() + i, paymentDay)
-    // Если число больше последнего дня месяца — берём последний день
+    const d = new Date(today.getFullYear(), today.getMonth() + i, 1)
     const maxDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
     d.setDate(Math.min(paymentDay, maxDay))
     dates.push(d.toISOString().slice(0, 10))
@@ -49,42 +47,36 @@ function Calculator({ form }) {
   const downPayment = Number(form.down_payment) || 0
   const termMonths = Number(form.term_months) || 0
   const paymentDay = Number(form.payment_day) || 1
-
   if (!salePrice || !termMonths) return null
-
   const markup = salePrice - costPrice
   const amountToFinance = Math.max(0, salePrice - downPayment)
   const monthlyPayment = termMonths > 0 ? amountToFinance / termMonths : 0
   const dates = buildScheduleDates(termMonths, paymentDay)
   const firstDate = dates[0] ? new Date(dates[0]).toLocaleDateString('ru-RU') : '—'
   const lastDate = dates[dates.length - 1] ? new Date(dates[dates.length - 1]).toLocaleDateString('ru-RU') : '—'
-
   return (
-    <div style={{
-      background: 'var(--teal-bg)', border: '1px solid var(--teal)',
-      borderRadius: 8, padding: '12px 14px',
-    }}>
+    <div style={{ background: 'var(--teal-bg)', border: '1px solid var(--teal)', borderRadius: 8, padding: '12px 14px' }}>
       <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)', margin: '0 0 10px' }}>📊 Расчёт рассрочки</p>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
-        <CalcRow label="Наценка (доход)" value={fmt(markup)} color="var(--teal)" />
-        {downPayment > 0 && <CalcRow label="Первоначальный взнос" value={fmt(downPayment)} />}
-        <CalcRow label="Сумма к рассрочке" value={fmt(amountToFinance)} />
-        <CalcRow label="Ежемесячный платёж" value={fmt(Math.round(monthlyPayment))} bold />
-        <CalcRow label="Первый платёж" value={firstDate} />
-        <CalcRow label="Последний платёж" value={lastDate} />
+        {[
+          { label: 'Наценка (доход)', value: fmt(markup), color: 'var(--teal)' },
+          ...(downPayment > 0 ? [{ label: 'Первоначальный взнос', value: fmt(downPayment) }] : []),
+          { label: 'Сумма к рассрочке', value: fmt(amountToFinance) },
+          { label: 'Ежемесячный платёж', value: fmt(Math.round(monthlyPayment)), bold: true },
+          { label: 'Первый платёж', value: firstDate },
+          { label: 'Последний платёж', value: lastDate },
+        ].map((row, i) => (
+          <div key={i}>
+            <p style={{ fontSize: 11, color: 'var(--stone)', margin: 0 }}>{row.label}</p>
+            <p className="mono" style={{ fontSize: 14, margin: 0, color: row.color || 'var(--ink)', fontWeight: row.bold ? 600 : 400 }}>{row.value}</p>
+          </div>
+        ))}
       </div>
     </div>
   )
 }
 
-function CalcRow({ label, value, color, bold }) {
-  return (
-    <div>
-      <p style={{ fontSize: 11, color: 'var(--stone)', margin: 0 }}>{label}</p>
-      <p className="mono" style={{ fontSize: 14, margin: 0, color: color || 'var(--ink)', fontWeight: bold ? 600 : 400 }}>{value}</p>
-    </div>
-  )
-}
+const emptyGuarantor = { full_name: '', phone: '', address: '', notes: '' }
 
 export default function ContractsView({ tenantId, profile }) {
   const [contracts, setContracts] = useState([])
@@ -96,13 +88,13 @@ export default function ContractsView({ tenantId, profile }) {
   const [saving, setSaving] = useState(false)
   const [search, setSearch] = useState('')
   const [dupWarning, setDupWarning] = useState('')
-
   const [form, setForm] = useState({
     client_name: '', client_phone: '', client_address: '',
     item_description: '', cost_price: '', sale_price: '',
     down_payment: '', term_months: '', payment_day: '1',
   })
   const [pool, setPool] = useState([{ investor_id: '', amount: '' }])
+  const [guarantors, setGuarantors] = useState([{ ...emptyGuarantor }])
 
   useEffect(() => { loadAll() }, [tenantId])
 
@@ -110,19 +102,13 @@ export default function ContractsView({ tenantId, profile }) {
     setLoading(true)
     const { data: contractsData } = await supabase
       .from('contracts')
-      .select('*, clients(full_name, phone, address), contract_funding(*, investors(full_name)), payment_schedule(*), payments(*)')
+      .select('*, clients(full_name, phone, address), contract_funding(*, investors(full_name)), payment_schedule(*), payments(*), guarantors(*)')
       .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false })
-
     const { data: investorsData } = await supabase
-      .from('investors')
-      .select('id, full_name, total_capital')
-      .eq('tenant_id', tenantId)
-
+      .from('investors').select('id, full_name, total_capital').eq('tenant_id', tenantId)
     const { data: activeFunding } = await supabase
-      .from('contract_funding')
-      .select('investor_id, amount, contracts(status)')
-
+      .from('contract_funding').select('investor_id, amount, contracts(status)')
     const freeMap = {}
     ;(investorsData || []).forEach(inv => {
       const inUse = (activeFunding || [])
@@ -130,7 +116,6 @@ export default function ContractsView({ tenantId, profile }) {
         .reduce((s, f) => s + Number(f.amount), 0)
       freeMap[inv.id] = Math.max(0, Number(inv.total_capital) - inUse)
     })
-
     setInvestors(investorsData || [])
     setFreeCapital(freeMap)
     setContracts(contractsData || [])
@@ -142,32 +127,33 @@ export default function ContractsView({ tenantId, profile }) {
     const existing = contracts.filter(c =>
       c.clients?.full_name?.toLowerCase().includes(name.toLowerCase()) && c.status !== 'closed'
     )
-    if (existing.length > 0) {
-      setDupWarning(`⚠️ У клиента "${existing[0].clients.full_name}" уже есть активный договор: ${existing[0].item_description}`)
-    } else { setDupWarning('') }
+    setDupWarning(existing.length > 0
+      ? `⚠️ У клиента "${existing[0].clients.full_name}" уже есть активный договор: ${existing[0].item_description}`
+      : '')
   }
 
   function autoDistribute() {
     const cost = Number(form.cost_price)
-    if (!cost || cost <= 0) { alert('Сначала введите закупочную цену'); return }
+    if (!cost) { alert('Сначала введите закупочную цену'); return }
     const eligible = investors.filter(inv => (freeCapital[inv.id] || 0) > 0)
-    if (eligible.length === 0) { alert('Нет инвесторов со свободным капиталом'); return }
+    if (!eligible.length) { alert('Нет инвесторов со свободным капиталом'); return }
     const totalFree = eligible.reduce((s, inv) => s + freeCapital[inv.id], 0)
     let remaining = cost
-    const newPool = eligible.map((inv, idx) => {
+    setPool(eligible.map((inv, idx) => {
       const isLast = idx === eligible.length - 1
       const amount = isLast ? remaining : Math.floor(cost * freeCapital[inv.id] / totalFree)
       remaining -= amount
       return { investor_id: inv.id, amount: String(amount) }
-    })
-    setPool(newPool)
+    }))
   }
 
   function addPoolRow() { setPool([...pool, { investor_id: '', amount: '' }]) }
-  function updatePoolRow(idx, field, value) {
-    const next = [...pool]; next[idx][field] = value; setPool(next)
-  }
+  function updatePoolRow(idx, f, v) { const n = [...pool]; n[idx][f] = v; setPool(n) }
   function removePoolRow(idx) { setPool(pool.filter((_, i) => i !== idx)) }
+
+  function addGuarantor() { if (guarantors.length < 2) setGuarantors([...guarantors, { ...emptyGuarantor }]) }
+  function updateGuarantor(idx, f, v) { const n = [...guarantors]; n[idx][f] = v; setGuarantors(n) }
+  function removeGuarantor(idx) { setGuarantors(guarantors.filter((_, i) => i !== idx)) }
 
   const poolTotal = pool.reduce((s, p) => s + (Number(p.amount) || 0), 0)
   const costPrice = Number(form.cost_price) || 0
@@ -176,40 +162,38 @@ export default function ContractsView({ tenantId, profile }) {
   async function handleSave(e) {
     e.preventDefault()
     setSaving(true)
-
-    const { data: client, error: clientErr } = await supabase
-      .from('clients')
-      .insert({
-        tenant_id: tenantId,
-        full_name: form.client_name,
-        phone: form.client_phone,
-        address: form.client_address || null,
-      })
+    const { data: client, error: ce } = await supabase.from('clients')
+      .insert({ tenant_id: tenantId, full_name: form.client_name, phone: form.client_phone, address: form.client_address || null })
       .select().single()
-    if (clientErr) { setSaving(false); alert('Ошибка клиента: ' + clientErr.message); return }
+    if (ce) { setSaving(false); alert('Ошибка клиента: ' + ce.message); return }
 
     const downPayment = Number(form.down_payment) || 0
     const salePrice = Number(form.sale_price)
     const amountToFinance = Math.max(0, salePrice - downPayment)
     const paymentDay = Number(form.payment_day) || 1
 
-    const { data: contract, error: contractErr } = await supabase
-      .from('contracts')
+    const { data: contract, error: coe } = await supabase.from('contracts')
       .insert({
         tenant_id: tenantId, client_id: client.id,
         item_description: form.item_description,
-        cost_price: Number(form.cost_price),
-        sale_price: salePrice,
-        down_payment: downPayment,
-        term_months: Number(form.term_months),
-        payment_day: paymentDay,
-      })
-      .select().single()
-    if (contractErr) { setSaving(false); alert('Ошибка договора: ' + contractErr.message); return }
+        cost_price: Number(form.cost_price), sale_price: salePrice,
+        down_payment: downPayment, term_months: Number(form.term_months), payment_day: paymentDay,
+      }).select().single()
+    if (coe) { setSaving(false); alert('Ошибка договора: ' + coe.message); return }
 
+    // Поручители
+    const gRows = guarantors.filter(g => g.full_name.trim()).map(g => ({
+      contract_id: contract.id, full_name: g.full_name,
+      phone: g.phone || null, address: g.address || null, notes: g.notes || null,
+    }))
+    if (gRows.length > 0) {
+      const { error: ge } = await supabase.from('guarantors').insert(gRows)
+      if (ge) { setSaving(false); alert('Ошибка поручителей: ' + ge.message); return }
+    }
+
+    // Пул инвесторов
     const fundingRows = pool.filter(p => p.investor_id && p.amount).map(p => ({
-      contract_id: contract.id, investor_id: p.investor_id,
-      amount: Number(p.amount),
+      contract_id: contract.id, investor_id: p.investor_id, amount: Number(p.amount),
       share_pct: costPrice > 0 ? Math.round((Number(p.amount) / costPrice) * 10000) / 100 : 0,
     }))
     if (fundingRows.length > 0) {
@@ -217,16 +201,16 @@ export default function ContractsView({ tenantId, profile }) {
       if (fe) { setSaving(false); alert('Ошибка пула: ' + fe.message); return }
     }
 
+    // График платежей
     const months = Number(form.term_months)
-    const baseAmount = Math.floor((amountToFinance / months) * 100) / 100
+    const base = Math.floor((amountToFinance / months) * 100) / 100
     const dates = buildScheduleDates(months, paymentDay)
-    const scheduleRows = []
-    let runningTotal = 0
-    for (let i = 0; i < months; i++) {
-      const amount = i === months - 1 ? Math.round((amountToFinance - runningTotal) * 100) / 100 : baseAmount
-      runningTotal += amount
-      scheduleRows.push({ contract_id: contract.id, installment_no: i + 1, due_date: dates[i], amount_due: amount })
-    }
+    let rt = 0
+    const scheduleRows = dates.map((due_date, i) => {
+      const amount = i === months - 1 ? Math.round((amountToFinance - rt) * 100) / 100 : base
+      rt += amount
+      return { contract_id: contract.id, installment_no: i + 1, due_date, amount_due: amount }
+    })
     const { error: se } = await supabase.from('payment_schedule').insert(scheduleRows)
     if (se) { setSaving(false); alert('Ошибка графика: ' + se.message); return }
 
@@ -235,11 +219,12 @@ export default function ContractsView({ tenantId, profile }) {
     setDupWarning('')
     setForm({ client_name: '', client_phone: '', client_address: '', item_description: '', cost_price: '', sale_price: '', down_payment: '', term_months: '', payment_day: '1' })
     setPool([{ investor_id: '', amount: '' }])
+    setGuarantors([{ ...emptyGuarantor }])
     loadAll()
   }
 
   async function handleDeleteContract(id) {
-    if (!confirm('Удалить договор? Все платежи и данные пула будут удалены.')) return
+    if (!confirm('Удалить договор? Все данные будут удалены.')) return
     await supabase.from('contracts').delete().eq('id', id)
     setSelected(null)
     loadAll()
@@ -259,7 +244,8 @@ export default function ContractsView({ tenantId, profile }) {
       c.clients?.full_name?.toLowerCase().includes(q) ||
       c.item_description?.toLowerCase().includes(q) ||
       c.clients?.phone?.includes(q) ||
-      c.clients?.address?.toLowerCase().includes(q)
+      c.clients?.address?.toLowerCase().includes(q) ||
+      (c.guarantors || []).some(g => g.full_name.toLowerCase().includes(q))
     )
   })
 
@@ -272,17 +258,12 @@ export default function ContractsView({ tenantId, profile }) {
         <SummaryCard label="Закрыто" value={closedCount} />
       </div>
 
-      <input
-        className="input-field"
-        placeholder="🔍 Поиск по клиенту, товару, телефону или адресу..."
-        value={search} onChange={e => setSearch(e.target.value)}
-        style={{ marginBottom: 12 }}
-      />
+      <input className="input-field"
+        placeholder="🔍 Поиск по клиенту, товару, телефону, адресу или поручителю..."
+        value={search} onChange={e => setSearch(e.target.value)} style={{ marginBottom: 12 }} />
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-        <p style={{ fontSize: 13, color: 'var(--stone)', margin: 0 }}>
-          {filtered.length} из {contracts.length} договор(ов)
-        </p>
+        <p style={{ fontSize: 13, color: 'var(--stone)', margin: 0 }}>{filtered.length} из {contracts.length} договор(ов)</p>
         <button className="btn-primary" onClick={() => { setShowForm(s => !s); setDupWarning('') }}>
           {showForm ? 'Отмена' : '+ Новый договор'}
         </button>
@@ -296,31 +277,62 @@ export default function ContractsView({ tenantId, profile }) {
 
       {showForm && (
         <form onSubmit={handleSave} className="card" style={{ padding: '1.25rem', marginBottom: '1rem', display: 'grid', gap: 12 }}>
+
+          {/* Клиент */}
           <p style={{ fontSize: 13, fontWeight: 600, margin: 0, color: 'var(--stone)' }}>Клиент</p>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <div>
-              <input className="input-field" placeholder="ФИО клиента" required
-                value={form.client_name}
+              <input className="input-field" placeholder="ФИО клиента" required value={form.client_name}
                 onChange={e => { setForm({ ...form, client_name: e.target.value }); checkDuplicate(e.target.value) }} />
               {dupWarning && <p style={{ color: '#D4A017', fontSize: 12, margin: '4px 0 0' }}>{dupWarning}</p>}
             </div>
-            <input className="input-field" placeholder="Телефон"
-              value={form.client_phone} onChange={e => setForm({ ...form, client_phone: e.target.value })} />
+            <input className="input-field" placeholder="Телефон" value={form.client_phone}
+              onChange={e => setForm({ ...form, client_phone: e.target.value })} />
           </div>
           <input className="input-field" placeholder="Адрес (город, улица, дом, квартира)"
             value={form.client_address} onChange={e => setForm({ ...form, client_address: e.target.value })} />
 
+          {/* Поручители */}
+          <p style={{ fontSize: 13, fontWeight: 600, margin: '8px 0 0', color: 'var(--stone)' }}>Поручители (до 2-х)</p>
+          {guarantors.map((g, idx) => (
+            <div key={idx} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', display: 'grid', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center' }}>
+                <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--stone)', margin: 0 }}>Поручитель {idx + 1}</p>
+                {guarantors.length > 1 && (
+                  <button type="button" onClick={() => removeGuarantor(idx)}
+                    className="btn-secondary" style={{ padding: '2px 10px', fontSize: 12, marginLeft: 'auto' }}>
+                    Удалить
+                  </button>
+                )}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <input className="input-field" placeholder="ФИО поручителя"
+                  value={g.full_name} onChange={e => updateGuarantor(idx, 'full_name', e.target.value)} />
+                <input className="input-field" placeholder="Телефон"
+                  value={g.phone} onChange={e => updateGuarantor(idx, 'phone', e.target.value)} />
+              </div>
+              <input className="input-field" placeholder="Адрес поручителя"
+                value={g.address} onChange={e => updateGuarantor(idx, 'address', e.target.value)} />
+              <input className="input-field" placeholder="Заметки (необязательно)"
+                value={g.notes} onChange={e => updateGuarantor(idx, 'notes', e.target.value)} />
+            </div>
+          ))}
+          {guarantors.length < 2 && (
+            <button type="button" onClick={addGuarantor} className="btn-secondary" style={{ justifySelf: 'start' }}>
+              + Добавить второго поручителя
+            </button>
+          )}
+
+          {/* Договор */}
           <p style={{ fontSize: 13, fontWeight: 600, margin: '8px 0 0', color: 'var(--stone)' }}>Договор мурабаха</p>
           <input className="input-field" placeholder="Товар / описание" required
             value={form.item_description} onChange={e => setForm({ ...form, item_description: e.target.value })} />
-
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             <input className="input-field" placeholder="Закупочная цена (₽)" type="number" required
               value={form.cost_price} onChange={e => setForm({ ...form, cost_price: e.target.value })} />
             <input className="input-field" placeholder="Цена продажи (₽)" type="number" required
               value={form.sale_price} onChange={e => setForm({ ...form, sale_price: e.target.value })} />
           </div>
-
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
             <div>
               <input className="input-field" placeholder="Первоначальный взнос (₽)" type="number"
@@ -342,6 +354,7 @@ export default function ContractsView({ tenantId, profile }) {
 
           <Calculator form={form} />
 
+          {/* Пул инвесторов */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '4px 0 0' }}>
             <p style={{ fontSize: 13, fontWeight: 600, margin: 0, color: 'var(--stone)', flex: 1 }}>
               Пул инвесторов {poolMismatch && <span style={{ color: 'var(--rust)', fontWeight: 400 }}>— сумма ≠ закупочной цене</span>}
@@ -350,7 +363,6 @@ export default function ContractsView({ tenantId, profile }) {
               ⚡ Авторасчёт
             </button>
           </div>
-
           {pool.map((row, idx) => (
             <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 10, alignItems: 'center' }}>
               <select className="input-field" required value={row.investor_id}
@@ -393,11 +405,8 @@ export default function ContractsView({ tenantId, profile }) {
 
         return (
           <div key={c.id}>
-            <div
-              onClick={() => setSelected(selected === c.id ? null : c.id)}
-              className="card"
-              style={{ padding: 12, marginBottom: 8, cursor: 'pointer', ...urgencyStyle }}
-            >
+            <div onClick={() => setSelected(selected === c.id ? null : c.id)}
+              className="card" style={{ padding: 12, marginBottom: 8, cursor: 'pointer', ...urgencyStyle }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
                 <p style={{ fontWeight: 500, fontSize: 14, margin: 0, flex: 1 }}>
                   {c.item_description}
@@ -410,8 +419,9 @@ export default function ContractsView({ tenantId, profile }) {
                 <span className={`badge ${STATUS_CLASS[c.status]}`}>{STATUS_LABEL[c.status]}</span>
               </div>
               <p style={{ fontSize: 12, color: 'var(--stone)', margin: '0 0 4px' }}>
-                {c.clients?.full_name} · {c.term_months} мес · оплата {c.payment_day || 1}-го числа
+                {c.clients?.full_name} · {c.term_months} мес · оплата {c.payment_day || 1}-го
                 {Number(c.down_payment) > 0 && <span> · взнос {fmt(c.down_payment)}</span>}
+                {(c.guarantors || []).length > 0 && <span> · {c.guarantors.length} поруч.</span>}
               </p>
               {c.clients?.address && (
                 <p style={{ fontSize: 12, color: 'var(--stone)', margin: '0 0 4px' }}>📍 {c.clients.address}</p>
@@ -425,20 +435,38 @@ export default function ContractsView({ tenantId, profile }) {
 
             {selected === c.id && (
               <div className="card" style={{ padding: '0.75rem 1rem', marginTop: -4, marginBottom: 8, background: 'var(--ivory)' }}>
-                <div style={{ marginBottom: 10 }}>
-                  <p style={{ fontSize: 12, color: 'var(--stone)', margin: '0 0 4px' }}>Клиент</p>
-                  <p style={{ fontSize: 13, margin: 0 }}>{c.clients?.full_name}</p>
-                  {c.clients?.phone && <p style={{ fontSize: 12, color: 'var(--stone)', margin: '2px 0 0' }}>📞 {c.clients.phone}</p>}
-                  {c.clients?.address && <p style={{ fontSize: 12, color: 'var(--stone)', margin: '2px 0 0' }}>📍 {c.clients.address}</p>}
-                </div>
 
+                {/* Клиент */}
+                <p style={{ fontSize: 12, color: 'var(--stone)', margin: '0 0 4px' }}>Клиент</p>
+                <p style={{ fontSize: 13, fontWeight: 500, margin: 0 }}>{c.clients?.full_name}</p>
+                {c.clients?.phone && <p style={{ fontSize: 12, color: 'var(--stone)', margin: '2px 0 0' }}>📞 {c.clients.phone}</p>}
+                {c.clients?.address && <p style={{ fontSize: 12, color: 'var(--stone)', margin: '2px 0 4px' }}>📍 {c.clients.address}</p>}
+
+                {/* Поручители */}
+                {(c.guarantors || []).length > 0 && (
+                  <>
+                    <p style={{ fontSize: 12, color: 'var(--stone)', margin: '10px 0 6px' }}>Поручители</p>
+                    {c.guarantors.map((g, idx) => (
+                      <div key={idx} style={{ padding: '8px 10px', background: 'var(--paper)', border: '1px solid var(--border)', borderRadius: 8, marginBottom: 6 }}>
+                        <p style={{ fontSize: 13, fontWeight: 500, margin: 0 }}>{idx + 1}. {g.full_name}</p>
+                        {g.phone && <p style={{ fontSize: 12, color: 'var(--stone)', margin: '2px 0 0' }}>📞 {g.phone}</p>}
+                        {g.address && <p style={{ fontSize: 12, color: 'var(--stone)', margin: '2px 0 0' }}>📍 {g.address}</p>}
+                        {g.notes && <p style={{ fontSize: 12, color: 'var(--stone)', margin: '2px 0 0' }}>💬 {g.notes}</p>}
+                      </div>
+                    ))}
+                  </>
+                )}
+
+                {/* Взнос */}
                 {Number(c.down_payment) > 0 && (
-                  <p style={{ fontSize: 12, color: 'var(--stone)', margin: '0 0 8px' }}>
-                    Взнос: <span className="mono" style={{ fontWeight: 500 }}>{fmt(c.down_payment)}</span> · к рассрочке: <span className="mono" style={{ fontWeight: 500 }}>{fmt(Number(c.sale_price) - Number(c.down_payment))}</span>
+                  <p style={{ fontSize: 12, color: 'var(--stone)', margin: '8px 0' }}>
+                    Взнос: <span className="mono" style={{ fontWeight: 500 }}>{fmt(c.down_payment)}</span>
+                    {' · '}к рассрочке: <span className="mono" style={{ fontWeight: 500 }}>{fmt(Number(c.sale_price) - Number(c.down_payment))}</span>
                   </p>
                 )}
 
-                <p style={{ fontSize: 12, color: 'var(--stone)', margin: '0 0 6px' }}>Пул инвесторов</p>
+                {/* Пул */}
+                <p style={{ fontSize: 12, color: 'var(--stone)', margin: '10px 0 6px' }}>Пул инвесторов</p>
                 {(c.contract_funding || []).map((f, idx) => {
                   const investorProfit = Math.round(Number(c.markup) * Number(f.share_pct)) / 100
                   const paidProfit = totalPaid > 0 && Number(c.sale_price) > 0
@@ -458,6 +486,7 @@ export default function ContractsView({ tenantId, profile }) {
                   )
                 })}
 
+                {/* График */}
                 <p style={{ fontSize: 12, color: 'var(--stone)', margin: '14px 0 6px' }}>График платежей</p>
                 <PaymentSchedule contract={c} profile={profile} onChanged={loadAll} />
 
@@ -481,14 +510,11 @@ function PaymentSchedule({ contract, profile, onChanged }) {
   const [payingId, setPayingId] = useState(null)
   const [amount, setAmount] = useState('')
   const [saving, setSaving] = useState(false)
-
   const isClosed = contract.status === 'closed'
   const schedule = [...(contract.payment_schedule || [])].sort((a, b) => a.installment_no - b.installment_no)
-  const payments = contract.payments || []
-  const totalPaid = payments.reduce((s, p) => s + Number(p.amount), 0)
+  const totalPaid = (contract.payments || []).reduce((s, p) => s + Number(p.amount), 0)
   const amountToFinance = Math.max(0, Number(contract.sale_price) - Number(contract.down_payment || 0))
   const progressPct = amountToFinance > 0 ? Math.min(100, Math.round((totalPaid / amountToFinance) * 100)) : 0
-
   let remainingPaid = totalPaid
   const rows = schedule.map(item => {
     const due = Number(item.amount_due)
@@ -507,9 +533,7 @@ function PaymentSchedule({ contract, profile, onChanged }) {
         contract_id: contract.id, amount: Number(amount), received_by: profile.id,
       })
       if (error) { alert('Ошибка: ' + error.message); return }
-      setPayingId(null)
-      setAmount('')
-      onChanged()
+      setPayingId(null); setAmount(''); onChanged()
     } finally { setSaving(false) }
   }
 
@@ -526,9 +550,7 @@ function PaymentSchedule({ contract, profile, onChanged }) {
         <div key={item.id} style={{ padding: '8px 0', borderTop: '1px solid var(--border)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
-              <p style={{ fontSize: 13, margin: 0 }}>
-                Платёж {item.installment_no} · {new Date(item.due_date).toLocaleDateString('ru-RU')}
-              </p>
+              <p style={{ fontSize: 13, margin: 0 }}>Платёж {item.installment_no} · {new Date(item.due_date).toLocaleDateString('ru-RU')}</p>
               <p style={{ fontSize: 11, margin: '2px 0 0' }}>
                 {item.isPaid && <span style={{ color: 'var(--teal)' }}>оплачено</span>}
                 {!item.isPaid && item.isOverdue && !isClosed && <span style={{ color: 'var(--rust)' }}>просрочен</span>}
