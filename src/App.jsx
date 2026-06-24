@@ -1,9 +1,12 @@
 import { AuthProvider, useAuth } from './AuthContext'
 import Login from './Login'
 import Dashboard from './Dashboard'
+import SuperAdmin from './SuperAdmin'
+import { SUPERADMIN_ID } from './superadminClient'
 
 function AppContent() {
   const { session, profile, loading } = useAuth()
+  const isAdminRoute = window.location.pathname === '/admin'
 
   if (loading) {
     return (
@@ -14,6 +17,16 @@ function AppContent() {
   }
 
   if (!session) return <Login />
+
+  // Суперадмин панель — только по /admin и только для суперадмина
+  if (isAdminRoute) {
+    if (profile?.id === SUPERADMIN_ID) return <SuperAdmin />
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--stone)' }}>
+        Доступ запрещён
+      </div>
+    )
+  }
 
   if (!profile) {
     return (
