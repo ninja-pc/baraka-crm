@@ -5,6 +5,7 @@ import InvestorsView from './InvestorsView'
 import ContractsView from './ContractsView'
 import ReportsView from './ReportsView'
 import ExpensesView from './ExpensesView'
+import CashView from './CashView'
 
 function AppContent() {
   const { session, profile, loading } = useAuth()
@@ -37,6 +38,7 @@ function Dashboard() {
   const tabs = [
     { key: 'investors', label: 'Инвесторы' },
     { key: 'contracts', label: 'Договоры' },
+    { key: 'cash', label: 'Касса' },
     { key: 'expenses', label: 'Расходы' },
     { key: 'reports', label: 'Отчёты' },
   ]
@@ -67,6 +69,7 @@ function Dashboard() {
       <main style={{ paddingBottom: '4rem' }}>
         {tab === 'investors' && <InvestorsView tenantId={profile.tenant_id} profile={profile} />}
         {tab === 'contracts' && <ContractsView tenantId={profile.tenant_id} profile={profile} />}
+        {tab === 'cash' && <CashView tenantId={profile.tenant_id} profile={profile} />}
         {tab === 'expenses' && <ExpensesView tenantId={profile.tenant_id} profile={profile} />}
         {tab === 'reports' && <ReportsView tenantId={profile.tenant_id} />}
       </main>
