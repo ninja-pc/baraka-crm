@@ -27,14 +27,24 @@ export function AuthProvider({ children }) {
     return () => listener.subscription.unsubscribe()
   }, [])
 
-  async function loadProfile(userId) {
+  async function loadProfile(userId, attempt = 1) {
     const { data, error } = await supabase
       .from('profiles')
       .select('*, tenants(name)')
       .eq('id', userId)
       .single()
 
-    if (!error) setProfile(data)
+    if (error || !data) {
+      // профиль ещё не записан — повторяем до 5 раз с паузой
+      if (attempt < 5) {
+        setTimeout(() => loadProfile(userId, attempt + 1), 800)
+      } else {
+        setLoading(false)
+      }
+      return
+    }
+
+    setProfile(data)
     setLoading(false)
   }
 
