@@ -35,13 +35,17 @@ function AppContent() {
 
 function Dashboard() {
   const { profile, signOut } = useAuth()
-  const [tab, setTab] = useState('overview')
+  const [tab, setTab] = useState(() => localStorage.getItem('baraka-tab') || 'overview')
   const [dark, setDark] = useState(() => localStorage.getItem('baraka-theme') === 'dark')
 
   useEffect(() => {
     document.documentElement.dataset.theme = dark ? 'dark' : 'light'
     localStorage.setItem('baraka-theme', dark ? 'dark' : 'light')
   }, [dark])
+
+  useEffect(() => {
+    localStorage.setItem('baraka-tab', tab)
+  }, [tab])
 
   const tabs = [
     { key: 'overview', label: 'Обзор' },
