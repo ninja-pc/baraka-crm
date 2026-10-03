@@ -51,15 +51,17 @@ export function AuthProvider({ children }) {
   }, [])
 
   async function loadProfile(userId, attempt = 1) {
-    const { data, error } = await supabase
+    // Load the profile first, without a nested tenants relation.
+    // This avoids a nested RLS/join failure hiding an otherwise valid profile.
+    const { data: profileData, error: profileError } = await supabase
       .from('profiles')
-      .select('*, tenants(name)')
+      .select('*')
       .eq('id', userId)
       .single()
 
-    if (error || !data) {
-      // Registration creates Auth first and profile second.
-      // Give the profile a few seconds to appear before showing an error state.
+    if (profileError || !profileData) {
+      console.error('Profile load error:', profileError)
+
       if (attempt < 10) {
         setTimeout(() => loadProfile(userId, attempt + 1), 500)
       } else {
@@ -68,7 +70,23 @@ export function AuthProvider({ children }) {
       return
     }
 
-    setProfile(data)
+    // Load the tenant separately.
+    const { data: tenantData, error: tenantError } = await supabase
+      .from('tenants')
+      .select('name')
+      .eq('id', profileData.tenant_id)
+      .single()
+
+    if (tenantError) {
+      console.error('Tenant load error:', tenantError)
+    }
+
+    if (cancelled) return
+
+    setProfile({
+      ...profileData,
+      tenants: tenantData || null,
+    })
     setLoading(false)
   }
 
