@@ -97,6 +97,13 @@ export function AuthProvider({ children }) {
     setLoading(false)
   }
 
+  async function refreshProfile() {
+    if (session?.user?.id) {
+      setLoading(true)
+      await loadProfile(session.user.id)
+    }
+  }
+
   async function signIn(email, password) {
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     return { error }
@@ -107,7 +114,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ session, profile, profileError, loading, signIn, signOut }}>
+    <AuthContext.Provider value={{ session, profile, profileError, loading, signIn, signOut, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   )
