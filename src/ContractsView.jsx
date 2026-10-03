@@ -638,7 +638,11 @@ export default function ContractsView({ tenantId, profile }) {
                 <p style={{ fontSize: 12, color: 'var(--stone)', margin: '14px 0 6px' }}>График платежей</p>
                 <PaymentSchedule contract={c} profile={profile} onChanged={loadAll} />
 
-                <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', gap: 8, marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+                  <button className="btn-primary" style={{ fontSize: 12 }}
+                    onClick={e => { e.stopPropagation(); printContract(c, profile.full_name, profile.tenants?.name) }}>
+                    🖨️ Печать договора
+                  </button>
                   <button className="btn-secondary"
                     style={{ fontSize: 12, color: 'var(--rust)', borderColor: 'var(--rust-bg)' }}
                     onClick={e => { e.stopPropagation(); handleDeleteContract(c.id) }}>
