@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from './AuthContext'
 import Login from './Login'
 import InvestorsView from './InvestorsView'
 import ContractsView from './ContractsView'
+import ClientsView from './ClientsView'
 import ReportsView from './ReportsView'
 import ExpensesView from './ExpensesView'
 import CashView from './CashView'
@@ -37,6 +38,7 @@ function Dashboard() {
 
   const tabs = [
     { key: 'investors', label: 'Инвесторы' },
+    { key: 'clients', label: 'Клиенты' },
     { key: 'contracts', label: 'Договоры' },
     { key: 'cash', label: 'Касса' },
     { key: 'expenses', label: 'Расходы' },
@@ -57,7 +59,7 @@ function Dashboard() {
         </button>
       </header>
 
-      <nav style={{ display: 'flex', gap: 8, marginBottom: '1.5rem', borderBottom: '1px solid var(--border)', paddingBottom: 12 }}>
+      <nav style={{ display: 'flex', gap: 8, marginBottom: '1.5rem', borderBottom: '1px solid var(--border)', paddingBottom: 12, overflowX: 'auto' }}>
         {tabs.map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
             className={tab === t.key ? 'btn-primary' : 'btn-secondary'}>
@@ -68,6 +70,7 @@ function Dashboard() {
 
       <main style={{ paddingBottom: '4rem' }}>
         {tab === 'investors' && <InvestorsView tenantId={profile.tenant_id} profile={profile} />}
+        {tab === 'clients' && <ClientsView tenantId={profile.tenant_id} />}
         {tab === 'contracts' && <ContractsView tenantId={profile.tenant_id} profile={profile} />}
         {tab === 'cash' && <CashView tenantId={profile.tenant_id} profile={profile} />}
         {tab === 'expenses' && <ExpensesView tenantId={profile.tenant_id} profile={profile} />}
