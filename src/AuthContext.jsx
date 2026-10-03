@@ -28,20 +28,28 @@ export function AuthProvider({ children }) {
 
     initialize()
 
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session)
+    const { data: listener } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      setSession(nextSession)
 
-      if (!session) {
+      if (event === 'SIGNED_OUT' || !nextSession) {
         setProfile(null)
         setProfileError(null)
         setLoading(false)
         return
       }
 
-      setLoading(true)
-      setTimeout(() => {
-        if (!cancelled) loadProfile(session.user.id)
-      }, 0)
+      // A token refresh happens when the browser returns to the foreground.
+      // It must not reset the whole CRM to a loading state or reload the profile.
+      if (event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
+        return
+      }
+
+      if (event === 'SIGNED_IN' && nextSession.user?.id) {
+        setLoading(true)
+        setTimeout(() => {
+          if (!cancelled) loadProfile(nextSession.user.id)
+        }, 0)
+      }
     })
 
     return () => {
