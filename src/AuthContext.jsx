@@ -6,6 +6,7 @@ const AuthContext = createContext(null)
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(null)
   const [profile, setProfile] = useState(null)
+  const [profileError, setProfileError] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -32,15 +33,14 @@ export function AuthProvider({ children }) {
 
       if (!session) {
         setProfile(null)
+        setProfileError(null)
         setLoading(false)
         return
       }
 
       setLoading(true)
       setTimeout(() => {
-        if (!cancelled) {
-          loadProfile(session.user.id)
-        }
+        if (!cancelled) loadProfile(session.user.id)
       }, 0)
     })
 
@@ -51,6 +51,8 @@ export function AuthProvider({ children }) {
   }, [])
 
   async function loadProfile(userId, attempt = 1) {
+    setProfileError(null)
+
     const { data: profileData, error: profileError } = await supabase
       .from('profiles')
       .select('*')
@@ -60,9 +62,10 @@ export function AuthProvider({ children }) {
     if (profileError || !profileData) {
       console.error('Profile load error:', profileError)
 
-      if (attempt < 10) {
-        setTimeout(() => loadProfile(userId, attempt + 1), 500)
+      if (attempt < 3) {
+        setTimeout(() => loadProfile(userId, attempt + 1), 700)
       } else {
+        setProfileError(profileError?.message || 'Профиль не найден')
         setLoading(false)
       }
       return
@@ -76,6 +79,7 @@ export function AuthProvider({ children }) {
 
     if (tenantError) {
       console.error('Tenant load error:', tenantError)
+      setProfileError('Компания не найдена: ' + tenantError.message)
     }
 
     setProfile({
@@ -95,7 +99,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ session, profile, loading, signIn, signOut }}>
+    <AuthContext.Provider value={{ session, profile, profileError, loading, signIn, signOut }}>
       {children}
     </AuthContext.Provider>
   )
