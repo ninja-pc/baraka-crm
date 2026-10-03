@@ -36,11 +36,11 @@ export function AuthProvider({ children }) {
         return
       }
 
-      // Do not make async Supabase calls directly inside onAuthStateChange.
-      // Supabase documents a potential deadlock in that case.
       setLoading(true)
       setTimeout(() => {
-        loadProfile(session.user.id)
+        if (!cancelled) {
+          loadProfile(session.user.id)
+        }
       }, 0)
     })
 
@@ -51,8 +51,6 @@ export function AuthProvider({ children }) {
   }, [])
 
   async function loadProfile(userId, attempt = 1) {
-    // Load the profile first, without a nested tenants relation.
-    // This avoids a nested RLS/join failure hiding an otherwise valid profile.
     const { data: profileData, error: profileError } = await supabase
       .from('profiles')
       .select('*')
@@ -70,7 +68,6 @@ export function AuthProvider({ children }) {
       return
     }
 
-    // Load the tenant separately.
     const { data: tenantData, error: tenantError } = await supabase
       .from('tenants')
       .select('name')
@@ -80,8 +77,6 @@ export function AuthProvider({ children }) {
     if (tenantError) {
       console.error('Tenant load error:', tenantError)
     }
-
-    if (cancelled) return
 
     setProfile({
       ...profileData,
