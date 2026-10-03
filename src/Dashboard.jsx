@@ -4,6 +4,7 @@ import Login from './Login'
 import InvestorsView from './InvestorsView'
 import ContractsView from './ContractsView'
 import ClientsView from './ClientsView'
+import OverviewView from './OverviewView'
 import ReportsView from './ReportsView'
 import ExpensesView from './ExpensesView'
 import CashView from './CashView'
@@ -34,7 +35,7 @@ function AppContent() {
 
 function Dashboard() {
   const { profile, signOut } = useAuth()
-  const [tab, setTab] = useState('investors')
+  const [tab, setTab] = useState('overview')
   const [dark, setDark] = useState(() => localStorage.getItem('baraka-theme') === 'dark')
 
   useEffect(() => {
@@ -43,6 +44,7 @@ function Dashboard() {
   }, [dark])
 
   const tabs = [
+    { key: 'overview', label: 'Обзор' },
     { key: 'investors', label: 'Инвесторы' },
     { key: 'clients', label: 'Клиенты' },
     { key: 'contracts', label: 'Договоры' },
@@ -84,6 +86,7 @@ function Dashboard() {
       </nav>
 
       <main style={{ paddingBottom: '4rem' }}>
+        {tab === 'overview' && <OverviewView tenantId={profile.tenant_id} />}
         {tab === 'investors' && <InvestorsView tenantId={profile.tenant_id} profile={profile} />}
         {tab === 'clients' && <ClientsView tenantId={profile.tenant_id} />}
         {tab === 'contracts' && <ContractsView tenantId={profile.tenant_id} profile={profile} />}
