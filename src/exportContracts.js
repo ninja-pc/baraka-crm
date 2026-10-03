@@ -19,7 +19,7 @@ function xlsMoney(value) {
 }
 
 function downloadXls(filename, html) {
-  const blob = new Blob(['\\ufeff', html], { type: 'application/vnd.ms-excel;charset=utf-8' })
+  const blob = new Blob(['\ufeff', html], { type: 'application/vnd.ms-excel;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
