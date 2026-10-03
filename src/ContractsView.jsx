@@ -101,65 +101,96 @@ function printContract(contract, sellerName, companyName) {
   const client = contract.clients || {}
   const guarantors = contract.guarantors || []
   const schedule = [...(contract.payment_schedule || [])].sort((a, b) => a.installment_no - b.installment_no)
+  const totalPrice = Number(contract.sale_price || 0)
+  const downPayment = Number(contract.down_payment || 0)
+  const creditAmount = Math.max(0, totalPrice - downPayment)
   const totalSchedule = schedule.reduce((s, x) => s + Number(x.amount_due || 0), 0)
+  const money = n => fmt(Number(n || 0))
+  const dateLong = value => value ? new Date(value + 'T00:00:00').toLocaleDateString('ru-RU', { day:'numeric', month:'long', year:'numeric' }) : '—'
+  const clean = value => escapeHtml(value || '—')
+
   const html = `<!doctype html><html lang="ru"><head><meta charset="utf-8">
-  <title>Договор № ${escapeHtml(contract.contract_number || '')}</title>
+  <title>Договор № ${clean(contract.contract_number)}</title>
   <style>
-    @page { size: A4; margin: 18mm 16mm; }
-    body { font-family: Arial, sans-serif; color:#111; font-size:12pt; line-height:1.45; }
-    h1 { text-align:center; font-size:16pt; margin:0 0 8px; }
-    h2 { font-size:13pt; margin:18px 0 8px; }
-    p { margin:5px 0; }
-    .center{text-align:center}.muted{color:#555}.row{display:flex;justify-content:space-between;gap:20px}
-    table{width:100%;border-collapse:collapse;margin:8px 0 14px} th,td{border:1px solid #333;padding:6px 7px}
-    th{font-weight:600}.sign{margin-top:28px}.sign td{border:0;width:50%;vertical-align:top;padding:18px 8px 0 0}
-    .line{display:inline-block;border-bottom:1px solid #111;min-width:180px;height:18px}
+    @page{size:A4;margin:16mm 17mm 18mm}*{box-sizing:border-box}
+    body{font-family:"Times New Roman",serif;color:#111;font-size:12pt;line-height:1.42;margin:0}
+    .header{text-align:center;margin-bottom:20px}.company{font-size:14pt;font-weight:700;text-transform:uppercase}
+    h1{font-size:16pt;line-height:1.25;margin:12px 0 5px;text-transform:uppercase}.number{text-align:center;font-size:11pt}
+    h2{font-size:13pt;margin:18px 0 8px;text-transform:uppercase}.intro{margin:16px 0}
+    p{margin:6px 0;text-align:justify}table{width:100%;border-collapse:collapse;margin:9px 0 14px}
+    th,td{border:1px solid #222;padding:6px 8px}th{text-align:center}.right{text-align:right;white-space:nowrap}
+    .box{border:1px solid #222;padding:9px 11px;margin:9px 0}.sign{margin-top:28px;page-break-inside:avoid}
+    .sign td{border:0;width:50%;padding:13px 12px 13px 0;vertical-align:top}.line{display:inline-block;border-bottom:1px solid #111;width:155px;height:17px}
+    .small{font-size:10pt}
   </style></head><body>
-  <h1>ДОГОВОР КУПЛИ-ПРОДАЖИ ТОВАРА С РАССРОЧКОЙ ПЛАТЕЖА</h1>
-  <p class="center">№ ${escapeHtml(contract.contract_number || '—')} от ${fmtDate(contract.contract_date)}</p>
-  <p><b>Продавец:</b> ${escapeHtml(companyName || '—')}, в лице ${escapeHtml(sellerName || '—')}.</p>
+  <div class="header"><div class="company">${clean(companyName)}</div>
+  <h1>Договор купли-продажи товара<br>с рассрочкой платежа</h1>
+  <div class="number">№ ${clean(contract.contract_number)} от ${dateLong(contract.contract_date)}</div></div>
+  <p class="intro">г. ______________________________ &nbsp;&nbsp; «____» ______________ 20____ г.</p>
+  <p>Гражданин(ка) <b>${clean(client.full_name)}</b>, именуемый(ая) в дальнейшем «Покупатель», с одной стороны, и <b>${clean(companyName)}</b>, в лице <b>${clean(sellerName)}</b>, именуемый в дальнейшем «Продавец», с другой стороны, заключили настоящий договор о нижеследующем.</p>
 
-  <h2>1. Стороны и предмет договора</h2>
-  <p><b>Покупатель:</b> ${escapeHtml(client.full_name)}, дата рождения: ${fmtDate(client.birth_date)}.</p>
-  <p>Паспорт: серия ${escapeHtml(client.passport_series)}, № ${escapeHtml(client.passport_number)}, выдан ${escapeHtml(client.passport_issued_by)}, дата выдачи ${fmtDate(client.passport_issue_date)}, код подразделения ${escapeHtml(client.passport_department_code)}.</p>
-  <p><b>Адрес регистрации:</b> ${escapeHtml(client.registration_address || client.address || '—')}.</p>
-  <p><b>Телефон:</b> ${escapeHtml(client.phone || '—')}.</p>
-  <p><b>Товар:</b> ${escapeHtml(contract.item_description)}.</p>
+  <h2>1. Предмет договора</h2>
+  <p>1.1. Продавец передает Покупателю товар, а Покупатель принимает товар и обязуется оплатить его стоимость в порядке и сроки, установленные настоящим договором.</p>
+  <p>1.2. Товар: <b>${clean(contract.item_description)}</b>.</p>
+  <p>1.3. Комплектность, внешний вид и основные характеристики товара проверяются Покупателем при получении. При наличии серийного номера он указывается в товарных документах.</p>
 
-  <h2>2. Стоимость и порядок оплаты</h2>
-  <p>Цена товара составляет <b>${fmt(contract.sale_price)}</b>. Первоначальный взнос — <b>${fmt(contract.down_payment)}</b>. Сумма, подлежащая оплате в рассрочку, — <b>${fmt(Number(contract.sale_price) - Number(contract.down_payment || 0))}</b>.</p>
-  <p>Покупатель обязуется вносить платежи в соответствии с графиком ниже. Общая сумма по графику: <b>${fmt(totalSchedule)}</b>.</p>
+  <h2>2. Данные покупателя</h2>
+  <p><b>ФИО:</b> ${clean(client.full_name)}; <b>дата рождения:</b> ${dateLong(client.birth_date)}.</p>
+  <p><b>Паспорт:</b> серия ${clean(client.passport_series)}, № ${clean(client.passport_number)}, выдан ${clean(client.passport_issued_by)}, дата выдачи ${dateLong(client.passport_issue_date)}, код подразделения ${clean(client.passport_department_code)}.</p>
+  <p><b>Адрес регистрации:</b> ${clean(client.registration_address || client.address)}.</p>
+  <p><b>Телефон:</b> ${clean(client.phone)}.</p>
+
+  <h2>3. Цена и рассрочка</h2>
+  <p>3.1. Цена товара составляет <b>${money(totalPrice)}</b>.</p>
+  <p>3.2. Первоначальный платеж составляет <b>${money(downPayment)}</b>. Сумма, предоставленная в рассрочку, составляет <b>${money(creditAmount)}</b>.</p>
+  <p>3.3. Покупатель обязан оплачивать каждый платеж не позднее указанной в графике даты. Платеж считается исполненным после фактического поступления денежных средств Продавцу.</p>
+  <p>3.4. Досрочное погашение допускается без дополнительной комиссии.</p>
+
+  <h2>4. График платежей</h2>
   <table><thead><tr><th>№</th><th>Дата платежа</th><th>Сумма</th></tr></thead><tbody>
-  ${schedule.map(x => `<tr><td>${x.installment_no}</td><td>${fmtDate(x.due_date)}</td><td>${fmt(x.amount_due)}</td></tr>`).join('')}
-  </tbody></table>
+  ${schedule.map(x => `<tr><td style="text-align:center">${x.installment_no}</td><td>${dateLong(x.due_date)}</td><td class="right">${money(x.amount_due)}</td></tr>`).join('')}
+  <tr><td colspan="2"><b>Итого платежей по рассрочке</b></td><td class="right"><b>${money(totalSchedule || creditAmount)}</b></td></tr></tbody></table>
 
-  <h2>3. Права и обязанности сторон</h2>
-  <p>Продавец обязуется передать товар Покупателю на условиях настоящего договора. Покупатель обязуется своевременно оплачивать товар и соблюдать установленный график платежей.</p>
-  <p>Изменение графика, суммы или иных существенных условий договора оформляется по соглашению сторон в письменной форме.</p>
+  <h2>5. Порядок оплаты и досрочное погашение</h2>
+  <p>5.1. Покупатель самостоятельно контролирует сроки оплаты и обязан обеспечить наличие денежных средств к каждой дате платежа.</p>
+  <p>5.2. Частичное или полное досрочное погашение допускается. При досрочном погашении остаток задолженности определяется по данным учета Продавца на дату платежа.</p>
+  <p>5.3. Любое изменение графика платежей оформляется письменно и подписывается Сторонами.</p>
 
-  <h2>4. Ответственность за просрочку</h2>
-  <p>При нарушении срока платежа Покупатель обязан погасить образовавшуюся задолженность. Иные последствия просрочки применяются только в соответствии с законодательством Российской Федерации и условиями настоящего договора.</p>
+  <h2>6. Просрочка</h2>
+  <p>6.1. При просрочке Покупатель обязан погасить сумму просроченного платежа и сохраняет обязанность исполнить остальные платежи по договору.</p>
+  <p>6.2. Продавец вправе направить Покупателю письменное требование об устранении просрочки и использовать иные способы защиты права, предусмотренные законодательством Российской Федерации.</p>
+  <p>6.3. Неустойка, штрафы и иные платежи за просрочку не начисляются, если они прямо не предусмотрены отдельным письменным соглашением Сторон и законодательством Российской Федерации.</p>
 
-  <h2>5. Поручительство</h2>
-  ${guarantors.length ? guarantors.map((g,i) => `<p><b>Поручитель ${i+1}:</b> ${escapeHtml(g.full_name)}, дата рождения: ${fmtDate(g.birth_date)}. Паспорт: серия ${escapeHtml(g.passport_series)}, № ${escapeHtml(g.passport_number)}, выдан ${escapeHtml(g.passport_issued_by)}, дата выдачи ${fmtDate(g.passport_issue_date)}, код подразделения ${escapeHtml(g.passport_department_code)}. Адрес регистрации: ${escapeHtml(g.registration_address || g.address || '—')}. Телефон: ${escapeHtml(g.phone || '—')}.</p>`).join('') : '<p>Поручитель не предусмотрен.</p>'}
-  <p>Поручитель подтверждает ознакомление с условиями договора и принимает на себя обязательства в объёме, предусмотренном отдельным разделом/условиями поручительства настоящего договора и законодательством РФ.</p>
+  <h2>7. Поручительство</h2>
+  ${guarantors.length ? guarantors.map((g,i) => `<div class="box">
+    <p><b>Поручитель №${i+1}: ${clean(g.full_name)}</b>; дата рождения: ${dateLong(g.birth_date)}.</p>
+    <p><b>Паспорт:</b> серия ${clean(g.passport_series)}, № ${clean(g.passport_number)}, выдан ${clean(g.passport_issued_by)}, дата выдачи ${dateLong(g.passport_issue_date)}, код подразделения ${clean(g.passport_department_code)}.</p>
+    <p><b>Адрес регистрации:</b> ${clean(g.registration_address || g.address)}; <b>телефон:</b> ${clean(g.phone)}.</p>
+    <p>Поручитель подтверждает ознакомление с условиями договора. Объем и пределы ответственности поручителя определяются условиями настоящего договора, подписанного им, и законодательством Российской Федерации.</p>
+  </div>`).join('') : '<p>Поручитель по договору отсутствует.</p>'}
 
-  <h2>6. Персональные данные и заключительные положения</h2>
-  <p>Стороны подтверждают достоверность указанных ими сведений. Персональные данные используются для оформления, исполнения и учёта настоящего договора в соответствии с применимым законодательством.</p>
-  <p>Договор составлен в двух экземплярах, имеющих одинаковую юридическую силу, по одному для каждой стороны. При наличии поручителей им предоставляется экземпляр или копия договора по договорённости сторон.</p>
+  <h2>8. Передача товара и качество</h2>
+  <p>8.1. При получении товара Покупатель проверяет его внешний вид, комплектность и работоспособность, если такая проверка возможна на месте.</p>
+  <p>8.2. Подписание настоящего договора подтверждает ознакомление Покупателя с товаром и условиями его оплаты.</p>
+  <p>8.3. Требования по качеству товара предъявляются в порядке, установленном законодательством Российской Федерации.</p>
 
-  <table class="sign"><tr><td><b>ПРОДАВЕЦ</b><br>${escapeHtml(companyName || '—')}<br>${escapeHtml(sellerName || '—')}<br><br>Подпись: <span class="line"></span></td>
-  <td><b>ПОКУПАТЕЛЬ</b><br>${escapeHtml(client.full_name)}<br><br>Подпись: <span class="line"></span></td></tr>
-  ${guarantors.map((g,i)=>`<tr><td><b>ПОРУЧИТЕЛЬ ${i+1}</b><br>${escapeHtml(g.full_name)}<br><br>Подпись: <span class="line"></span></td><td></td></tr>`).join('')}
-  </table>
-  <p class="muted">Документ сформирован в Baraka CRM. Перед использованием в реальной деятельности шаблон необходимо проверить с юристом под вашу схему работы.</p>
-  <script>window.onload=()=>{window.focus();window.print()}</script>
+  <h2>9. Персональные данные</h2>
+  <p>Стороны подтверждают достоверность предоставленных сведений. Персональные данные обрабатываются исключительно в целях заключения, исполнения и учета настоящего договора и в соответствии с применимым законодательством.</p>
+
+  <h2>10. Заключительные положения</h2>
+  <p>10.1. Все изменения и дополнения к договору оформляются письменно и подписываются Сторонами.</p>
+  <p>10.2. Споры разрешаются путем переговоров, а при недостижении соглашения — в порядке, установленном законодательством Российской Федерации.</p>
+  <p>10.3. Договор составлен в экземплярах для Продавца, Покупателя и каждого поручителя. Все подписанные экземпляры имеют одинаковую юридическую силу.</p>
+
+  <div class="sign"><h2>11. Подписи сторон</h2><table><tr>
+  <td><b>ПРОДАВЕЦ</b><br>${clean(companyName)}<br>${clean(sellerName)}<br><br>Подпись: <span class="line"></span></td>
+  <td><b>ПОКУПАТЕЛЬ</b><br>${clean(client.full_name)}<br><br>Подпись: <span class="line"></span></td></tr>
+  ${guarantors.map((g,i)=>`<tr><td><b>ПОРУЧИТЕЛЬ №${i+1}</b><br>${clean(g.full_name)}<br><br>Подпись: <span class="line"></span></td><td></td></tr>`).join('')}</table></div>
   </body></html>`
   const w = window.open('', '_blank', 'width=900,height=1000')
   if (!w) { alert('Браузер заблокировал окно печати. Разрешите всплывающие окна для сайта.'); return }
   w.document.write(html); w.document.close()
 }
-
 export default function ContractsView({ tenantId, profile }) {
   const [contracts, setContracts] = useState([])
   const [investors, setInvestors] = useState([])
