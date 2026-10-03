@@ -29,7 +29,6 @@ export default function Register({ onBack }) {
     setLoading(true)
 
     try {
-      // 1. Регистрируем пользователя в Supabase Auth.
       const { data: authData, error: authErr } = await supabase.auth.signUp({
         email,
         password: form.password,
@@ -39,44 +38,22 @@ export default function Register({ onBack }) {
         throw new Error('Ошибка регистрации: ' + authErr.message)
       }
 
-      const userId = authData.user?.id
-      if (!userId) {
+      if (!authData.user?.id) {
         throw new Error('Не удалось создать аккаунт. Попробуйте ещё раз.')
       }
 
-      // При выключенном Confirm Email Supabase сразу возвращает session.
-      // Без session RLS не позволит создать компанию и профиль.
       if (!authData.session) {
         throw new Error('Аккаунт создан, но сессия не получена. Проверьте подтверждение email в Supabase.')
       }
 
-      // 2. Создаём компанию.
-      const { data: tenant, error: tenantErr } = await supabase
-        .from('tenants')
-        .insert({ name: company })
-        .select('id')
-        .single()
+      const { error: setupError } = await supabase.rpc(
+        'create_company_profile_for_current_user',
+        { company_name: company }
+      )
 
-      if (tenantErr) {
-        throw new Error('Ошибка создания компании: ' + tenantErr.message)
+      if (setupError) {
+        throw new Error('Ошибка настройки компании: ' + setupError.message)
       }
-
-      // 3. Создаём профиль и связываем его с компанией.
-      const { error: profileErr } = await supabase
-        .from('profiles')
-        .insert({
-          id: userId,
-          tenant_id: tenant.id,
-          full_name: email.split('@')[0],
-          role: 'admin',
-        })
-
-      if (profileErr) {
-        throw new Error('Ошибка создания профиля: ' + profileErr.message)
-      }
-
-      // После успешной регистрации пользователь уже авторизован.
-      // AuthContext увидит профиль и откроет CRM автоматически.
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Неизвестная ошибка регистрации')
       setLoading(false)
