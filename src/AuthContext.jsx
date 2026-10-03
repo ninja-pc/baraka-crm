@@ -3,6 +3,32 @@ import { supabase } from './supabaseClient'
 
 const AuthContext = createContext(null)
 
+function getCachedProfile(userId) {
+  try {
+    const raw = sessionStorage.getItem(`baraka-profile-${userId}`)
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
+
+function cacheProfile(userId, profile) {
+  try {
+    sessionStorage.setItem(`baraka-profile-${userId}`, JSON.stringify(profile))
+  } catch {
+    // Cache is only a UI optimization. Ignore storage failures.
+  }
+}
+
+function clearCachedProfile(userId) {
+  if (!userId) return
+  try {
+    sessionStorage.removeItem(`baraka-profile-${userId}`)
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(null)
   const [profile, setProfile] = useState(null)
@@ -18,12 +44,23 @@ export function AuthProvider({ children }) {
 
       setSession(session)
 
-      if (session) {
-        setLoading(true)
-        await loadProfile(session.user.id)
-      } else {
+      if (!session) {
         setLoading(false)
+        return
       }
+
+      // If the browser recreated the React app after tab switching/backgrounding,
+      // show the cached UI immediately instead of flashing the global loading screen.
+      const cachedProfile = getCachedProfile(session.user.id)
+      if (cachedProfile) {
+        setProfile(cachedProfile)
+        setLoading(false)
+      } else {
+        setLoading(true)
+      }
+
+      // Always refresh the cached profile in the background.
+      await loadProfile(session.user.id, 1, false)
     }
 
     initialize()
@@ -32,23 +69,31 @@ export function AuthProvider({ children }) {
       setSession(nextSession)
 
       if (event === 'SIGNED_OUT' || !nextSession) {
+        clearCachedProfile(session?.user?.id)
         setProfile(null)
         setProfileError(null)
         setLoading(false)
         return
       }
 
-      // A token refresh happens when the browser returns to the foreground.
-      // It must not reset the whole CRM to a loading state or reload the profile.
+      // Token refresh is normal when the browser returns to the foreground.
+      // Never replace the CRM with the global loading screen for this event.
       if (event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
         return
       }
 
       if (event === 'SIGNED_IN' && nextSession.user?.id) {
-        setLoading(true)
-        setTimeout(() => {
-          if (!cancelled) loadProfile(nextSession.user.id)
-        }, 0)
+        const cachedProfile = getCachedProfile(nextSession.user.id)
+        if (cachedProfile) {
+          setProfile(cachedProfile)
+          setLoading(false)
+          loadProfile(nextSession.user.id, 1, false)
+        } else {
+          setLoading(true)
+          setTimeout(() => {
+            if (!cancelled) loadProfile(nextSession.user.id, 1, true)
+          }, 0)
+        }
       }
     })
 
@@ -58,7 +103,8 @@ export function AuthProvider({ children }) {
     }
   }, [])
 
-  async function loadProfile(userId, attempt = 1) {
+  async function loadProfile(userId, attempt = 1, showLoading = false) {
+    if (showLoading) setLoading(true)
     setProfileError(null)
 
     const { data: profileData, error: profileError } = await supabase
@@ -71,7 +117,7 @@ export function AuthProvider({ children }) {
       console.error('Profile load error:', profileError)
 
       if (attempt < 3) {
-        setTimeout(() => loadProfile(userId, attempt + 1), 700)
+        setTimeout(() => loadProfile(userId, attempt + 1, false), 700)
       } else {
         setProfileError(profileError?.message || 'Профиль не найден')
         setLoading(false)
@@ -90,17 +136,20 @@ export function AuthProvider({ children }) {
       setProfileError('Компания не найдена: ' + tenantError.message)
     }
 
-    setProfile({
+    const nextProfile = {
       ...profileData,
       tenants: tenantData || null,
-    })
+    }
+
+    setProfile(nextProfile)
+    cacheProfile(userId, nextProfile)
     setLoading(false)
   }
 
   async function refreshProfile() {
     if (session?.user?.id) {
-      setLoading(true)
-      await loadProfile(session.user.id)
+      // Refresh data without unmounting the CRM or showing the global loader.
+      await loadProfile(session.user.id, 1, false)
     }
   }
 
