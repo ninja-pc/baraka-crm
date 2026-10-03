@@ -7,10 +7,11 @@ import Dashboard from './Dashboard'
 import SuperAdmin from './SuperAdmin'
 
 function AppContent() {
-  const { session, profile, profileError, loading } = useAuth()
+  const { session, profile, profileError, loading, signOut } = useAuth()
   const [company, setCompany] = useState('ЛесБаза "Аюб"')
   const [setupLoading, setSetupLoading] = useState(false)
   const [setupError, setSetupError] = useState('')
+  const [logoutLoading, setLogoutLoading] = useState(false)
 
   async function finishCompanySetup() {
     const name = company.trim()
@@ -34,6 +35,12 @@ function AppContent() {
     }
 
     window.location.reload()
+  }
+
+  async function handleLogout() {
+    setLogoutLoading(true)
+    await signOut()
+    window.location.href = '/'
   }
 
   if (loading) {
@@ -96,6 +103,15 @@ function AppContent() {
               style={{ minWidth: 220 }}
             >
               {setupLoading ? 'Настраиваем...' : 'Продолжить в CRM'}
+            </button>
+
+            <button
+              className="btn-secondary"
+              onClick={handleLogout}
+              disabled={logoutLoading}
+              style={{ minWidth: 220 }}
+            >
+              {logoutLoading ? 'Выходим...' : 'Выйти из аккаунта'}
             </button>
 
             {session?.user?.id && (
