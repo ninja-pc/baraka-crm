@@ -9,22 +9,45 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    let cancelled = false
+
+    async function initialize() {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (cancelled) return
+
       setSession(session)
-      if (session) loadProfile(session.user.id)
-      else setLoading(false)
-    })
+
+      if (session) {
+        setLoading(true)
+        await loadProfile(session.user.id)
+      } else {
+        setLoading(false)
+      }
+    }
+
+    initialize()
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session)
-      if (session) loadProfile(session.user.id)
-      else {
+
+      if (!session) {
         setProfile(null)
         setLoading(false)
+        return
       }
+
+      // Do not make async Supabase calls directly inside onAuthStateChange.
+      // Supabase documents a potential deadlock in that case.
+      setLoading(true)
+      setTimeout(() => {
+        loadProfile(session.user.id)
+      }, 0)
     })
 
-    return () => listener.subscription.unsubscribe()
+    return () => {
+      cancelled = true
+      listener.subscription.unsubscribe()
+    }
   }, [])
 
   async function loadProfile(userId, attempt = 1) {
@@ -35,9 +58,10 @@ export function AuthProvider({ children }) {
       .single()
 
     if (error || !data) {
-      // профиль ещё не записан — повторяем до 5 раз с паузой
-      if (attempt < 5) {
-        setTimeout(() => loadProfile(userId, attempt + 1), 800)
+      // Registration creates Auth first and profile second.
+      // Give the profile a few seconds to appear before showing an error state.
+      if (attempt < 10) {
+        setTimeout(() => loadProfile(userId, attempt + 1), 500)
       } else {
         setLoading(false)
       }
