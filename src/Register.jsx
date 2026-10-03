@@ -5,12 +5,18 @@ export default function Register({ onBack }) {
   const [form, setForm] = useState({ company: '', email: '', password: '', confirm: '' })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [done, setDone] = useState(false)
 
   async function handleSubmit(e) {
     e.preventDefault()
     setError('')
 
+    const company = form.company.trim()
+    const email = form.email.trim()
+
+    if (!company) {
+      setError('Введите название компании')
+      return
+    }
     if (form.password.length < 6) {
       setError('Пароль должен быть не менее 6 символов')
       return
@@ -22,78 +28,59 @@ export default function Register({ onBack }) {
 
     setLoading(true)
 
-    // 1. Регистрируем пользователя в Supabase Auth
-    const { data: authData, error: authErr } = await supabase.auth.signUp({
-      email: form.email,
-      password: form.password,
-    })
-
-    if (authErr) {
-      setError('Ошибка регистрации: ' + authErr.message)
-      setLoading(false)
-      return
-    }
-
-    const userId = authData.user?.id
-    if (!userId) {
-      setError('Не удалось создать аккаунт. Попробуйте ещё раз.')
-      setLoading(false)
-      return
-    }
-
-    // 2. Создаём компанию (tenant)
-    const { data: tenant, error: tenantErr } = await supabase
-      .from('tenants')
-      .insert({ name: form.company })
-      .select()
-      .single()
-
-    if (tenantErr) {
-      setError('Ошибка создания компании: ' + tenantErr.message)
-      setLoading(false)
-      return
-    }
-
-    // 3. Создаём профиль пользователя и привязываем к компании
-    const { error: profileErr } = await supabase
-      .from('profiles')
-      .insert({
-        id: userId,
-        tenant_id: tenant.id,
-        full_name: form.email.split('@')[0],
-        role: 'admin',
+    try {
+      // 1. Регистрируем пользователя в Supabase Auth.
+      const { data: authData, error: authErr } = await supabase.auth.signUp({
+        email,
+        password: form.password,
       })
 
-    if (profileErr) {
-      setError('Ошибка создания профиля: ' + profileErr.message)
+      if (authErr) {
+        throw new Error('Ошибка регистрации: ' + authErr.message)
+      }
+
+      const userId = authData.user?.id
+      if (!userId) {
+        throw new Error('Не удалось создать аккаунт. Попробуйте ещё раз.')
+      }
+
+      // При выключенном Confirm Email Supabase сразу возвращает session.
+      // Без session RLS не позволит создать компанию и профиль.
+      if (!authData.session) {
+        throw new Error('Аккаунт создан, но сессия не получена. Проверьте подтверждение email в Supabase.')
+      }
+
+      // 2. Создаём компанию.
+      const { data: tenant, error: tenantErr } = await supabase
+        .from('tenants')
+        .insert({ name: company })
+        .select('id')
+        .single()
+
+      if (tenantErr) {
+        throw new Error('Ошибка создания компании: ' + tenantErr.message)
+      }
+
+      // 3. Создаём профиль и связываем его с компанией.
+      const { error: profileErr } = await supabase
+        .from('profiles')
+        .insert({
+          id: userId,
+          tenant_id: tenant.id,
+          full_name: email.split('@')[0],
+          role: 'admin',
+        })
+
+      if (profileErr) {
+        throw new Error('Ошибка создания профиля: ' + profileErr.message)
+      }
+
+      // После успешной регистрации пользователь уже авторизован.
+      // AuthContext увидит профиль и откроет CRM автоматически.
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Неизвестная ошибка регистрации')
       setLoading(false)
-      return
     }
-
-    setLoading(false)
-    setDone(true)
-  }
-
-  if (done) {
-    return (
-      <div style={{
-        minHeight: '100vh', display: 'flex', alignItems: 'center',
-        justifyContent: 'center', padding: '1rem',
-      }}>
-        <div className="card" style={{ width: '100%', maxWidth: 380, padding: '2.5rem 2rem', textAlign: 'center' }}>
-          <div style={{ fontSize: 40, marginBottom: 16 }}>✓</div>
-          <p style={{ fontFamily: 'var(--font-display)', fontSize: 22, fontWeight: 500, margin: '0 0 8px' }}>
-            Аккаунт создан
-          </p>
-          <p style={{ fontSize: 14, color: 'var(--stone)', margin: '0 0 24px' }}>
-            Компания «{form.company}» зарегистрирована. Войдите с вашим email и паролем.
-          </p>
-          <button className="btn-primary" style={{ width: '100%' }} onClick={onBack}>
-            Войти
-          </button>
-        </div>
-      </div>
-    )
   }
 
   return (
