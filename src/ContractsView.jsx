@@ -76,7 +76,89 @@ function Calculator({ form }) {
   )
 }
 
-const emptyGuarantor = { full_name: '', phone: '', address: '', notes: '' }
+const emptyGuarantor = {
+  full_name: '', birth_date: '', phone: '',
+  registration_address: '',
+  passport_series: '', passport_number: '', passport_issued_by: '',
+  passport_issue_date: '', passport_department_code: '', notes: ''
+}
+
+function todayIso() {
+  return new Date().toISOString().slice(0, 10)
+}
+
+function fmtDate(value) {
+  return value ? new Date(value + (value.length === 10 ? 'T00:00:00' : '')).toLocaleDateString('ru-RU') : '—'
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;').replaceAll("'", '&#039;')
+}
+
+function printContract(contract, sellerName, companyName) {
+  const client = contract.clients || {}
+  const guarantors = contract.guarantors || []
+  const schedule = [...(contract.payment_schedule || [])].sort((a, b) => a.installment_no - b.installment_no)
+  const totalSchedule = schedule.reduce((s, x) => s + Number(x.amount_due || 0), 0)
+  const html = `<!doctype html><html lang="ru"><head><meta charset="utf-8">
+  <title>Договор № ${escapeHtml(contract.contract_number || '')}</title>
+  <style>
+    @page { size: A4; margin: 18mm 16mm; }
+    body { font-family: Arial, sans-serif; color:#111; font-size:12pt; line-height:1.45; }
+    h1 { text-align:center; font-size:16pt; margin:0 0 8px; }
+    h2 { font-size:13pt; margin:18px 0 8px; }
+    p { margin:5px 0; }
+    .center{text-align:center}.muted{color:#555}.row{display:flex;justify-content:space-between;gap:20px}
+    table{width:100%;border-collapse:collapse;margin:8px 0 14px} th,td{border:1px solid #333;padding:6px 7px}
+    th{font-weight:600}.sign{margin-top:28px}.sign td{border:0;width:50%;vertical-align:top;padding:18px 8px 0 0}
+    .line{display:inline-block;border-bottom:1px solid #111;min-width:180px;height:18px}
+  </style></head><body>
+  <h1>ДОГОВОР КУПЛИ-ПРОДАЖИ ТОВАРА С РАССРОЧКОЙ ПЛАТЕЖА</h1>
+  <p class="center">№ ${escapeHtml(contract.contract_number || '—')} от ${fmtDate(contract.contract_date)}</p>
+  <p><b>Продавец:</b> ${escapeHtml(companyName || '—')}, в лице ${escapeHtml(sellerName || '—')}.</p>
+
+  <h2>1. Стороны и предмет договора</h2>
+  <p><b>Покупатель:</b> ${escapeHtml(client.full_name)}, дата рождения: ${fmtDate(client.birth_date)}.</p>
+  <p>Паспорт: серия ${escapeHtml(client.passport_series)}, № ${escapeHtml(client.passport_number)}, выдан ${escapeHtml(client.passport_issued_by)}, дата выдачи ${fmtDate(client.passport_issue_date)}, код подразделения ${escapeHtml(client.passport_department_code)}.</p>
+  <p><b>Адрес регистрации:</b> ${escapeHtml(client.registration_address || client.address || '—')}.</p>
+  <p><b>Телефон:</b> ${escapeHtml(client.phone || '—')}.</p>
+  <p><b>Товар:</b> ${escapeHtml(contract.item_description)}.</p>
+
+  <h2>2. Стоимость и порядок оплаты</h2>
+  <p>Цена товара составляет <b>${fmt(contract.sale_price)}</b>. Первоначальный взнос — <b>${fmt(contract.down_payment)}</b>. Сумма, подлежащая оплате в рассрочку, — <b>${fmt(Number(contract.sale_price) - Number(contract.down_payment || 0))}</b>.</p>
+  <p>Покупатель обязуется вносить платежи в соответствии с графиком ниже. Общая сумма по графику: <b>${fmt(totalSchedule)}</b>.</p>
+  <table><thead><tr><th>№</th><th>Дата платежа</th><th>Сумма</th></tr></thead><tbody>
+  ${schedule.map(x => `<tr><td>${x.installment_no}</td><td>${fmtDate(x.due_date)}</td><td>${fmt(x.amount_due)}</td></tr>`).join('')}
+  </tbody></table>
+
+  <h2>3. Права и обязанности сторон</h2>
+  <p>Продавец обязуется передать товар Покупателю на условиях настоящего договора. Покупатель обязуется своевременно оплачивать товар и соблюдать установленный график платежей.</p>
+  <p>Изменение графика, суммы или иных существенных условий договора оформляется по соглашению сторон в письменной форме.</p>
+
+  <h2>4. Ответственность за просрочку</h2>
+  <p>При нарушении срока платежа Покупатель обязан погасить образовавшуюся задолженность. Иные последствия просрочки применяются только в соответствии с законодательством Российской Федерации и условиями настоящего договора.</p>
+
+  <h2>5. Поручительство</h2>
+  ${guarantors.length ? guarantors.map((g,i) => `<p><b>Поручитель ${i+1}:</b> ${escapeHtml(g.full_name)}, дата рождения: ${fmtDate(g.birth_date)}. Паспорт: серия ${escapeHtml(g.passport_series)}, № ${escapeHtml(g.passport_number)}, выдан ${escapeHtml(g.passport_issued_by)}, дата выдачи ${fmtDate(g.passport_issue_date)}, код подразделения ${escapeHtml(g.passport_department_code)}. Адрес регистрации: ${escapeHtml(g.registration_address || g.address || '—')}. Телефон: ${escapeHtml(g.phone || '—')}.</p>`).join('') : '<p>Поручитель не предусмотрен.</p>'}
+  <p>Поручитель подтверждает ознакомление с условиями договора и принимает на себя обязательства в объёме, предусмотренном отдельным разделом/условиями поручительства настоящего договора и законодательством РФ.</p>
+
+  <h2>6. Персональные данные и заключительные положения</h2>
+  <p>Стороны подтверждают достоверность указанных ими сведений. Персональные данные используются для оформления, исполнения и учёта настоящего договора в соответствии с применимым законодательством.</p>
+  <p>Договор составлен в двух экземплярах, имеющих одинаковую юридическую силу, по одному для каждой стороны. При наличии поручителей им предоставляется экземпляр или копия договора по договорённости сторон.</p>
+
+  <table class="sign"><tr><td><b>ПРОДАВЕЦ</b><br>${escapeHtml(companyName || '—')}<br>${escapeHtml(sellerName || '—')}<br><br>Подпись: <span class="line"></span></td>
+  <td><b>ПОКУПАТЕЛЬ</b><br>${escapeHtml(client.full_name)}<br><br>Подпись: <span class="line"></span></td></tr>
+  ${guarantors.map((g,i)=>`<tr><td><b>ПОРУЧИТЕЛЬ ${i+1}</b><br>${escapeHtml(g.full_name)}<br><br>Подпись: <span class="line"></span></td><td></td></tr>`).join('')}
+  </table>
+  <p class="muted">Документ сформирован в Baraka CRM. Перед использованием в реальной деятельности шаблон необходимо проверить с юристом под вашу схему работы.</p>
+  <script>window.onload=()=>{window.focus();window.print()}</script>
+  </body></html>`
+  const w = window.open('', '_blank', 'width=900,height=1000')
+  if (!w) { alert('Браузер заблокировал окно печати. Разрешите всплывающие окна для сайта.'); return }
+  w.document.write(html); w.document.close()
+}
 
 export default function ContractsView({ tenantId, profile }) {
   const [contracts, setContracts] = useState([])
@@ -89,7 +171,9 @@ export default function ContractsView({ tenantId, profile }) {
   const [search, setSearch] = useState('')
   const [dupWarning, setDupWarning] = useState('')
   const [form, setForm] = useState({
-    client_name: '', client_phone: '', client_address: '',
+    client_name: '', client_birth_date: '', client_phone: '', client_address: '', client_registration_address: '',
+    client_passport_series: '', client_passport_number: '', client_passport_issued_by: '', client_passport_issue_date: '', client_passport_department_code: '',
+    contract_number: '', contract_date: todayIso(),
     item_description: '', cost_price: '', sale_price: '',
     down_payment: '', term_months: '', payment_day: '1',
   })
@@ -156,14 +240,29 @@ export default function ContractsView({ tenantId, profile }) {
   function removeGuarantor(idx) { setGuarantors(guarantors.filter((_, i) => i !== idx)) }
 
   const poolTotal = pool.reduce((s, p) => s + (Number(p.amount) || 0), 0)
+
+  function nextContractNumber() {
+    const nums = contracts.map(c => Number.parseInt(c.contract_number, 10)).filter(Number.isFinite)
+    return String((nums.length ? Math.max(...nums) : 0) + 1).padStart(4, '0')
+  }
   const costPrice = Number(form.cost_price) || 0
   const poolMismatch = poolTotal > 0 && costPrice > 0 && poolTotal !== costPrice
 
   async function handleSave(e) {
     e.preventDefault()
     setSaving(true)
+    const contractNumber = form.contract_number.trim() || nextContractNumber()
     const { data: client, error: ce } = await supabase.from('clients')
-      .insert({ tenant_id: tenantId, full_name: form.client_name, phone: form.client_phone, address: form.client_address || null })
+      .insert({
+        tenant_id: tenantId, full_name: form.client_name.trim(), phone: form.client_phone.trim() || null,
+        address: form.client_address.trim() || null, birth_date: form.client_birth_date || null,
+        registration_address: form.client_registration_address.trim() || null,
+        passport_series: form.client_passport_series.trim() || null,
+        passport_number: form.client_passport_number.trim() || null,
+        passport_issued_by: form.client_passport_issued_by.trim() || null,
+        passport_issue_date: form.client_passport_issue_date || null,
+        passport_department_code: form.client_passport_department_code.trim() || null,
+      })
       .select().single()
     if (ce) { setSaving(false); alert('Ошибка клиента: ' + ce.message); return }
 
@@ -178,13 +277,18 @@ export default function ContractsView({ tenantId, profile }) {
         item_description: form.item_description,
         cost_price: Number(form.cost_price), sale_price: salePrice,
         down_payment: downPayment, term_months: Number(form.term_months), payment_day: paymentDay,
+        contract_number: contractNumber, contract_date: form.contract_date || todayIso(),
       }).select().single()
     if (coe) { setSaving(false); alert('Ошибка договора: ' + coe.message); return }
 
     // Поручители
     const gRows = guarantors.filter(g => g.full_name.trim()).map(g => ({
       contract_id: contract.id, full_name: g.full_name,
-      phone: g.phone || null, address: g.address || null, notes: g.notes || null,
+      phone: g.phone || null, address: g.registration_address || null, notes: g.notes || null,
+      birth_date: g.birth_date || null, registration_address: g.registration_address || null,
+      passport_series: g.passport_series || null, passport_number: g.passport_number || null,
+      passport_issued_by: g.passport_issued_by || null, passport_issue_date: g.passport_issue_date || null,
+      passport_department_code: g.passport_department_code || null,
     }))
     if (gRows.length > 0) {
       const { error: ge } = await supabase.from('guarantors').insert(gRows)
@@ -217,7 +321,7 @@ export default function ContractsView({ tenantId, profile }) {
     setSaving(false)
     setShowForm(false)
     setDupWarning('')
-    setForm({ client_name: '', client_phone: '', client_address: '', item_description: '', cost_price: '', sale_price: '', down_payment: '', term_months: '', payment_day: '1' })
+    setForm({ client_name: '', client_birth_date: '', client_phone: '', client_address: '', client_registration_address: '', client_passport_series: '', client_passport_number: '', client_passport_issued_by: '', client_passport_issue_date: '', client_passport_department_code: '', contract_number: '', contract_date: todayIso(), item_description: '', cost_price: '', sale_price: '', down_payment: '', term_months: '', payment_day: '1' })
     setPool([{ investor_id: '', amount: '' }])
     setGuarantors([{ ...emptyGuarantor }])
     loadAll()
@@ -292,6 +396,28 @@ export default function ContractsView({ tenantId, profile }) {
           <input className="input-field" placeholder="Адрес (город, улица, дом, квартира)"
             value={form.client_address} onChange={e => setForm({ ...form, client_address: e.target.value })} />
 
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <input className="input-field" type="date" title="Дата рождения" value={form.client_birth_date}
+              onChange={e => setForm({ ...form, client_birth_date: e.target.value })} />
+            <input className="input-field" placeholder="Адрес регистрации (прописка)" value={form.client_registration_address}
+              onChange={e => setForm({ ...form, client_registration_address: e.target.value })} />
+          </div>
+          <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px', display: 'grid', gap: 8 }}>
+            <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--stone)', margin: 0 }}>Паспортные данные покупателя</p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+              <input className="input-field" placeholder="Серия" value={form.client_passport_series}
+                onChange={e => setForm({ ...form, client_passport_series: e.target.value })} />
+              <input className="input-field" placeholder="Номер" value={form.client_passport_number}
+                onChange={e => setForm({ ...form, client_passport_number: e.target.value })} />
+              <input className="input-field" type="date" title="Дата выдачи" value={form.client_passport_issue_date}
+                onChange={e => setForm({ ...form, client_passport_issue_date: e.target.value })} />
+            </div>
+            <input className="input-field" placeholder="Кем выдан паспорт" value={form.client_passport_issued_by}
+              onChange={e => setForm({ ...form, client_passport_issued_by: e.target.value })} />
+            <input className="input-field" placeholder="Код подразделения" value={form.client_passport_department_code}
+              onChange={e => setForm({ ...form, client_passport_department_code: e.target.value })} />
+          </div>
+
           {/* Поручители */}
           <p style={{ fontSize: 13, fontWeight: 600, margin: '8px 0 0', color: 'var(--stone)' }}>Поручители (до 2-х)</p>
           {guarantors.map((g, idx) => (
@@ -313,6 +439,22 @@ export default function ContractsView({ tenantId, profile }) {
               </div>
               <input className="input-field" placeholder="Адрес поручителя"
                 value={g.address} onChange={e => updateGuarantor(idx, 'address', e.target.value)} />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <input className="input-field" type="date" title="Дата рождения" value={g.birth_date}
+                  onChange={e => updateGuarantor(idx, 'birth_date', e.target.value)} />
+                <input className="input-field" placeholder="Адрес регистрации (прописка)" value={g.registration_address}
+                  onChange={e => updateGuarantor(idx, 'registration_address', e.target.value)} />
+              </div>
+              <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px', display: 'grid', gap: 8 }}>
+                <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--stone)', margin: 0 }}>Паспортные данные</p>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                  <input className="input-field" placeholder="Серия" value={g.passport_series} onChange={e => updateGuarantor(idx, 'passport_series', e.target.value)} />
+                  <input className="input-field" placeholder="Номер" value={g.passport_number} onChange={e => updateGuarantor(idx, 'passport_number', e.target.value)} />
+                  <input className="input-field" type="date" title="Дата выдачи" value={g.passport_issue_date} onChange={e => updateGuarantor(idx, 'passport_issue_date', e.target.value)} />
+                </div>
+                <input className="input-field" placeholder="Кем выдан паспорт" value={g.passport_issued_by} onChange={e => updateGuarantor(idx, 'passport_issued_by', e.target.value)} />
+                <input className="input-field" placeholder="Код подразделения" value={g.passport_department_code} onChange={e => updateGuarantor(idx, 'passport_department_code', e.target.value)} />
+              </div>
               <input className="input-field" placeholder="Заметки (необязательно)"
                 value={g.notes} onChange={e => updateGuarantor(idx, 'notes', e.target.value)} />
             </div>
@@ -324,7 +466,13 @@ export default function ContractsView({ tenantId, profile }) {
           )}
 
           {/* Договор */}
-          <p style={{ fontSize: 13, fontWeight: 600, margin: '8px 0 0', color: 'var(--stone)' }}>Договор мурабаха</p>
+          <p style={{ fontSize: 13, fontWeight: 600, margin: '8px 0 0', color: 'var(--stone)' }}>Договор</p>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <input className="input-field" placeholder={`Номер договора (по умолчанию ${nextContractNumber()})`} value={form.contract_number}
+              onChange={e => setForm({ ...form, contract_number: e.target.value })} />
+            <input className="input-field" type="date" value={form.contract_date}
+              onChange={e => setForm({ ...form, contract_date: e.target.value })} />
+          </div>
           <input className="input-field" placeholder="Товар / описание" required
             value={form.item_description} onChange={e => setForm({ ...form, item_description: e.target.value })} />
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
