@@ -217,7 +217,7 @@ export default function ContractsView({ tenantId, profile }) {
     setLoading(true)
     const { data: contractsData } = await supabase
       .from('contracts')
-      .select('*, clients(full_name, phone, address), contract_funding(*, investors(full_name)), payment_schedule(*), payments(*), guarantors(*)')
+      .select('*, clients(full_name, phone, address, birth_date, passport_series, passport_number, passport_issued_by, passport_issue_date, passport_department_code, registration_address), contract_funding(*, investors(full_name)), payment_schedule(*), payments(*), guarantors(*)')
       .eq('tenant_id', tenantId)
       .order('created_at', { ascending: false })
     const { data: investorsData } = await supabase
