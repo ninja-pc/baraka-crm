@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from './supabaseClient'
+import { exportContractsToXls } from './exportContracts.js'
 
 function fmt(n) {
   return (n || 0).toLocaleString('ru-RU') + ' ₽'
@@ -399,9 +400,14 @@ export default function ContractsView({ tenantId, profile }) {
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
         <p style={{ fontSize: 13, color: 'var(--stone)', margin: 0 }}>{filtered.length} из {contracts.length} договор(ов)</p>
-        <button className="btn-primary" onClick={() => { setShowForm(s => !s); setDupWarning('') }}>
-          {showForm ? 'Отмена' : '+ Новый договор'}
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button type="button" className="btn-secondary" onClick={() => exportContractsToXls(contracts, profile.tenants?.name)}>
+            📊 Excel
+          </button>
+          <button className="btn-primary" onClick={() => { setShowForm(s => !s); setDupWarning('') }}>
+            {showForm ? 'Отмена' : '+ Новый договор'}
+          </button>
+        </div>
       </div>
 
       <div style={{ display: 'flex', gap: 16, marginBottom: 12, fontSize: 12, color: 'var(--stone)' }}>
