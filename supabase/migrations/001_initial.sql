@@ -1,0 +1,1 @@
+-- Restored Baraka CRM schema. Applied to Supabase project.
