@@ -8,6 +8,7 @@ import OverviewView from './OverviewView'
 import ReportsView from './ReportsView'
 import ExpensesView from './ExpensesView'
 import CashView from './CashView'
+import ProfileView from './ProfileView'
 
 function AppContent() {
   const { session, profile, loading } = useAuth()
@@ -55,6 +56,7 @@ function Dashboard() {
     { key: 'cash', label: 'Касса' },
     { key: 'expenses', label: 'Расходы' },
     { key: 'reports', label: 'Отчёты' },
+    { key: 'profile', label: 'Профиль' },
   ]
 
   return (
@@ -97,6 +99,7 @@ function Dashboard() {
         {tab === 'cash' && <CashView tenantId={profile.tenant_id} profile={profile} />}
         {tab === 'expenses' && <ExpensesView tenantId={profile.tenant_id} profile={profile} />}
         {tab === 'reports' && <ReportsView tenantId={profile.tenant_id} />}
+        {tab === 'profile' && <ProfileView />}
       </main>
       </div>
     </div>
